@@ -1,0 +1,6 @@
+{
+  "name": "Vidaa TV",
+  "homeassistant": "2024.4.0",
+  "render_readme": true,
+  "content_in_root": false
+}

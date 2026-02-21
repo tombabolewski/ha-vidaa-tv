@@ -1,0 +1,86 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Vidaa TV",
+        "description": "Enter the IP address of your Hisense TV. Make sure the TV is powered on.",
+        "data": {
+          "host": "Host",
+          "port": "Port"
+        }
+      },
+      "confirm": {
+        "title": "Confirm Vidaa TV",
+        "description": "Do you want to set up {name} ({host})?"
+      },
+      "pair": {
+        "title": "Pair with TV",
+        "description": "A PIN code should appear on your TV ({name} at {host}). Enter the PIN below.",
+        "data": {
+          "pin": "PIN"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Reauthenticate Vidaa TV",
+        "description": "The TV at {host} requires reauthentication. A new PIN will be displayed on the TV."
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to TV. Make sure the TV is on and reachable.",
+      "invalid_pin": "Invalid PIN. Please check the PIN on your TV and try again.",
+      "pairing_failed": "Pairing failed. Please try again.",
+      "unknown": "An unexpected error occurred."
+    },
+    "abort": {
+      "already_configured": "This TV is already configured.",
+      "cannot_connect": "Cannot connect to TV.",
+      "no_host": "Could not determine TV host address.",
+      "not_vidaa_tv": "Device is not a Hisense/Vidaa TV.",
+      "reauth_successful": "Reauthentication successful."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Vidaa TV Options",
+        "description": "Configure options for your Vidaa TV.",
+        "data": {
+          "scan_interval": "Polling interval"
+        },
+        "data_description": {
+          "scan_interval": "How often to poll the TV for state updates (in seconds)."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "no_tvs_configured": {
+      "message": "No Vidaa TVs are configured."
+    },
+    "command_failed": {
+      "message": "Failed to send command to TV: {error}"
+    }
+  },
+  "services": {
+    "send_key": {
+      "name": "Send Key",
+      "description": "Send a remote key press to the TV.",
+      "fields": {
+        "key": {
+          "name": "Key",
+          "description": "The key to send (e.g., KEY_POWER, KEY_UP, KEY_OK)"
+        }
+      }
+    },
+    "launch_app": {
+      "name": "Launch App",
+      "description": "Launch an application on the TV.",
+      "fields": {
+        "app": {
+          "name": "App",
+          "description": "The app to launch (e.g., netflix, youtube, amazon)"
+        }
+      }
+    }
+  }
+}

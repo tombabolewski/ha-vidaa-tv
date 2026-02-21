@@ -1,0 +1,38 @@
+send_key:
+  name: Send Key
+  description: Send a remote key press to the TV.
+  target:
+    entity:
+      integration: vidaa_tv
+      domain: remote
+  fields:
+    key:
+      name: Key
+      description: The key to send (e.g., KEY_POWER, KEY_UP, KEY_OK, KEY_VOLUMEUP)
+      required: true
+      example: KEY_OK
+      selector:
+        text:
+
+launch_app:
+  name: Launch App
+  description: Launch an application on the TV.
+  target:
+    entity:
+      integration: vidaa_tv
+      domain: media_player
+  fields:
+    app:
+      name: App
+      description: The app to launch
+      required: true
+      example: netflix
+      selector:
+        select:
+          options:
+            - netflix
+            - youtube
+            - amazon
+            - disney
+            - hulu
+            - tubi
