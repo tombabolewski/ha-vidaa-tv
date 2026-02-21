@@ -178,8 +178,8 @@ class VidaaTVConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
                     return await self.async_step_pair()
 
-            except Exception:
-                _LOGGER.exception("Unexpected error during connection")
+            except Exception as err:
+                _LOGGER.debug("Config flow connection error: %s: %s", type(err).__name__, err)
                 errors["base"] = "unknown"
                 await self._async_cleanup_client()
 
