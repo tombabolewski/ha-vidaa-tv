@@ -13,8 +13,7 @@ import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.components import ssdp
-from homeassistant.components.ssdp import ATTR_UPNP_FRIENDLY_NAME
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import callback
 from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.helpers.selector import (
     NumberSelector,
@@ -318,7 +317,7 @@ class VidaaTVConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return self.async_abort(reason="no_host")
 
         self._discovery_info = discovery_info
-        self._name = discovery_info.upnp.get(ATTR_UPNP_FRIENDLY_NAME, DEFAULT_NAME)
+        self._name = discovery_info.upnp.get("friendlyName", DEFAULT_NAME)
 
         # Set unique ID from USN
         usn = discovery_info.ssdp_usn
