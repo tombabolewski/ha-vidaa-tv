@@ -13,20 +13,10 @@ from homeassistant.components.media_player import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_registry import DeviceInfo, CONNECTION_NETWORK_MAC
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import (
-    DOMAIN,
-    CONF_NAME,
-    CONF_MAC,
-    CONF_DEVICE_ID,
-    CONF_MODEL,
-    CONF_SW_VERSION,
-    DEFAULT_NAME,
-)
 from .coordinator import VidaaTVDataUpdateCoordinator
+from .entity import VidaaTVEntity
 
 if TYPE_CHECKING:
     from . import VidaaTVConfigEntry
@@ -46,11 +36,10 @@ async def async_setup_entry(
     async_add_entities([VidaaTVMediaPlayer(coordinator, entry)])
 
 
-class VidaaTVMediaPlayer(CoordinatorEntity[VidaaTVDataUpdateCoordinator], MediaPlayerEntity):
+class VidaaTVMediaPlayer(VidaaTVEntity, MediaPlayerEntity):
     """Representation of a Vidaa TV media player."""
 
     _attr_device_class = MediaPlayerDeviceClass.TV
-    _attr_has_entity_name = True
     _attr_name = None  # Use device name
 
     _attr_supported_features = (
@@ -72,35 +61,13 @@ class VidaaTVMediaPlayer(CoordinatorEntity[VidaaTVDataUpdateCoordinator], MediaP
         entry: ConfigEntry,
     ) -> None:
         """Initialize the media player."""
-        super().__init__(coordinator)
-        self._entry = entry
-        self._mac = entry.data.get(CONF_MAC)
-        self._device_id = entry.data.get(CONF_DEVICE_ID) or self._mac
+        super().__init__(coordinator, entry)
         self._attr_unique_id = f"{self._device_id}_media_player" if self._device_id else entry.entry_id
 
         # Source and app caches
         self._sources: list[str] = []
         self._apps: list[dict] = []
         self._source_list: list[str] = []
-
-    @property
-    def device_info(self) -> DeviceInfo:
-        """Return device info."""
-        device_id = self._entry.data.get(CONF_DEVICE_ID) or self._mac
-        mac = self._entry.data.get(CONF_MAC)
-
-        info = DeviceInfo(
-            identifiers={(DOMAIN, device_id or self._entry.entry_id)},
-            name=self._entry.data.get(CONF_NAME, DEFAULT_NAME),
-            manufacturer="Hisense",
-            model=self._entry.data.get(CONF_MODEL),
-            sw_version=self._entry.data.get(CONF_SW_VERSION),
-        )
-
-        if mac:
-            info["connections"] = {(CONNECTION_NETWORK_MAC, mac.lower())}
-
-        return info
 
     @property
     def available(self) -> bool:
@@ -203,8 +170,9 @@ class VidaaTVMediaPlayer(CoordinatorEntity[VidaaTVDataUpdateCoordinator], MediaP
         await self.coordinator.async_volume_down()
 
     async def async_mute_volume(self, mute: bool) -> None:
-        """Mute the volume."""
-        await self.coordinator.async_mute()
+        """Mute or unmute the volume."""
+        if self.is_volume_muted != mute:
+            await self.coordinator.async_mute()
 
     async def async_set_volume_level(self, volume: float) -> None:
         """Set volume level (0.0 to 1.0)."""

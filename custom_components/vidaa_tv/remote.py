@@ -2,28 +2,19 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING, Any, Iterable
 
 from homeassistant.components.remote import RemoteEntity, RemoteEntityFeature
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_registry import DeviceInfo, CONNECTION_NETWORK_MAC
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import (
-    DOMAIN,
-    CONF_NAME,
-    CONF_MAC,
-    CONF_DEVICE_ID,
-    CONF_MODEL,
-    CONF_SW_VERSION,
-    DEFAULT_NAME,
-)
 from .coordinator import VidaaTVDataUpdateCoordinator
+from .entity import VidaaTVEntity
 
-from vidaa.keys import get_key, ALL_KEYS
+from vidaa.keys import get_key
 
 if TYPE_CHECKING:
     from . import VidaaTVConfigEntry
@@ -43,10 +34,9 @@ async def async_setup_entry(
     async_add_entities([VidaaTVRemote(coordinator, entry)])
 
 
-class VidaaTVRemote(CoordinatorEntity[VidaaTVDataUpdateCoordinator], RemoteEntity):
+class VidaaTVRemote(VidaaTVEntity, RemoteEntity):
     """Representation of a Vidaa TV remote."""
 
-    _attr_has_entity_name = True
     _attr_name = "Remote"
     _attr_supported_features = RemoteEntityFeature.ACTIVITY
 
@@ -56,10 +46,7 @@ class VidaaTVRemote(CoordinatorEntity[VidaaTVDataUpdateCoordinator], RemoteEntit
         entry: ConfigEntry,
     ) -> None:
         """Initialize the remote."""
-        super().__init__(coordinator)
-        self._entry = entry
-        self._mac = entry.data.get(CONF_MAC)
-        self._device_id = entry.data.get(CONF_DEVICE_ID) or self._mac
+        super().__init__(coordinator, entry)
         self._attr_unique_id = f"{self._device_id}_remote" if self._device_id else f"{entry.entry_id}_remote"
         self._apps: list[dict] = []
         self._activity_list: list[str] = []
@@ -78,25 +65,6 @@ class VidaaTVRemote(CoordinatorEntity[VidaaTVDataUpdateCoordinator], RemoteEntit
                 self._activity_list = [app.get("name") for app in apps if app.get("name")]
         except Exception as err:
             _LOGGER.debug("Error updating activities: %s", err)
-
-    @property
-    def device_info(self) -> DeviceInfo:
-        """Return device info."""
-        device_id = self._entry.data.get(CONF_DEVICE_ID) or self._mac
-        mac = self._entry.data.get(CONF_MAC)
-
-        info = DeviceInfo(
-            identifiers={(DOMAIN, device_id or self._entry.entry_id)},
-            name=self._entry.data.get(CONF_NAME, DEFAULT_NAME),
-            manufacturer="Hisense",
-            model=self._entry.data.get(CONF_MODEL),
-            sw_version=self._entry.data.get(CONF_SW_VERSION),
-        )
-
-        if mac:
-            info["connections"] = {(CONNECTION_NETWORK_MAC, mac.lower())}
-
-        return info
 
     @property
     def available(self) -> bool:
@@ -143,7 +111,6 @@ class VidaaTVRemote(CoordinatorEntity[VidaaTVDataUpdateCoordinator], RemoteEntit
                 await self.coordinator.async_send_key(key)
 
                 if delay_secs > 0:
-                    import asyncio
                     await asyncio.sleep(delay_secs)
 
     async def async_learn_command(self, **kwargs: Any) -> None:

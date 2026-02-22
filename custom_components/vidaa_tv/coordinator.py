@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from datetime import timedelta
 from typing import Any
 
@@ -12,7 +13,7 @@ from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from vidaa import APPS
+from vidaa import APPS, AsyncVidaaTV
 from vidaa.wol import wake_tv
 from .const import DOMAIN, SCAN_INTERVAL, STATE_FAKE_SLEEP, CONF_MAC, CONF_HOST, CONF_DEVICE_ID
 
@@ -25,7 +26,7 @@ class VidaaTVDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def __init__(
         self,
         hass: HomeAssistant,
-        tv,  # AsyncVidaaTV
+        tv: AsyncVidaaTV,
         entry: ConfigEntry,
     ) -> None:
         """Initialize the coordinator."""
@@ -117,7 +118,6 @@ class VidaaTVDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from TV."""
-        import time
         start = time.monotonic()
 
         try:

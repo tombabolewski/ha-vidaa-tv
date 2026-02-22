@@ -6,7 +6,7 @@
   "dependencies": [],
   "documentation": "https://github.com/tombabolewski/ha-vidaa-tv",
   "integration_type": "device",
-  "iot_class": "local_push",
+  "iot_class": "local_polling",
   "issue_tracker": "https://github.com/tombabolewski/ha-vidaa-tv/issues",
   "requirements": ["vidaa-control@git+https://github.com/tombabolewski/vidaa-control.git@main"],
   "ssdp": [
@@ -14,5 +14,5 @@
       "st": "urn:schemas-upnp-org:device:MediaRenderer:1"
     }
   ],
-  "version": "1.1.0"
+  "version": "1.2.0"
 }
