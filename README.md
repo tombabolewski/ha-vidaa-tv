@@ -78,7 +78,7 @@ Copy the YAML into a manual card. Adjust entity IDs to match your TV's name.
 
 ## Library
 
-This integration uses [vidaa-control](https://github.com/tombabolewski/vidaa-control) — a standalone Python library for Vidaa TV communication.
+This integration uses [vidaa-control](https://pypi.org/project/vidaa-control/) ([source](https://github.com/tombabolewski/vidaa-control)) — a standalone Python library for Vidaa TV communication.
 
 ## License
 
