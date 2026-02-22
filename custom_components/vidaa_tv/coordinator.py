@@ -57,7 +57,7 @@ class VidaaTVDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         try:
             device_info = await self.tv.async_get_device_info(timeout=5)
-            _LOGGER.debug("Got device info: %s", device_info)
+            _LOGGER.debug("Got device info for %s", self.entry.data.get(CONF_HOST))
 
             if not device_info:
                 return

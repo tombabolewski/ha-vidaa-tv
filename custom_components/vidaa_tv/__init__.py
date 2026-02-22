@@ -28,6 +28,8 @@ from .const import (
 )
 from .coordinator import VidaaTVDataUpdateCoordinator
 
+from vidaa.keys import ALL_KEYS
+
 _LOGGER = logging.getLogger(__name__)
 
 from vidaa import AsyncVidaaTV
@@ -60,7 +62,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: VidaaTVConfigEntry) -> b
     port = entry.data.get(CONF_PORT, DEFAULT_PORT)
     mac = entry.data.get(CONF_MAC)
 
-    _LOGGER.debug("Setting up Vidaa TV at %s:%s (mac=%s)", host, port, mac)
+    _LOGGER.debug("Setting up Vidaa TV at %s:%s", host, port)
 
     # Set up token storage in HA config directory
     config_dir = Path(hass.config.config_dir)
@@ -80,12 +82,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: VidaaTVConfigEntry) -> b
     try:
         connected = await tv.async_connect(timeout=10)
         if not connected:
-            raise ConfigEntryNotReady(f"Failed to connect to TV at {host}")
+            raise ConfigEntryNotReady("Failed to connect to TV")
     except ConfigEntryNotReady:
         raise
     except Exception as err:
-        _LOGGER.error("Error connecting to TV: %s", err)
-        raise ConfigEntryNotReady(f"Error connecting to TV: {err}") from err
+        _LOGGER.debug("Error connecting to TV: %s", err)
+        raise ConfigEntryNotReady("Error connecting to TV") from err
 
     # Create coordinator for data updates
     coordinator = VidaaTVDataUpdateCoordinator(hass, tv, entry)
@@ -106,8 +108,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: VidaaTVConfigEntry) -> b
 async def _async_setup_services(hass: HomeAssistant) -> None:
     """Set up services for the integration."""
 
-    async def _async_call_all_tvs(action) -> None:
-        """Run an async action on all loaded TV coordinators."""
+    def _get_coordinators(call: ServiceCall) -> list[VidaaTVDataUpdateCoordinator]:
+        """Get coordinators targeted by a service call."""
         entries = hass.config_entries.async_entries(DOMAIN)
         if not entries:
             raise ServiceValidationError(
@@ -115,28 +117,36 @@ async def _async_setup_services(hass: HomeAssistant) -> None:
                 translation_key="no_tvs_configured",
             )
 
-        for entry in entries:
-            if entry.state.recoverable:
-                continue
-            runtime_data: VidaaTVRuntimeData = entry.runtime_data
-            try:
-                await action(runtime_data.coordinator)
-            except Exception as err:
-                raise HomeAssistantError(
-                    translation_domain=DOMAIN,
-                    translation_key="command_failed",
-                    translation_placeholders={"error": str(err)},
-                ) from err
+        return [
+            entry.runtime_data.coordinator
+            for entry in entries
+            if not entry.state.recoverable
+        ]
 
     async def async_send_key(call: ServiceCall) -> None:
         """Handle send_key service call."""
         key = call.data[ATTR_KEY]
-        await _async_call_all_tvs(lambda c: c.async_send_key(key))
+        # Validate key against known keys
+        if key not in ALL_KEYS:
+            raise ServiceValidationError(
+                f"Unknown key '{key}'. Must be one of: {', '.join(sorted(ALL_KEYS))}",
+            )
+        for coordinator in _get_coordinators(call):
+            try:
+                await coordinator.async_send_key(key)
+            except Exception as err:
+                _LOGGER.error("send_key failed: %s", err)
+                raise HomeAssistantError("Failed to send key to TV") from err
 
     async def async_launch_app(call: ServiceCall) -> None:
         """Handle launch_app service call."""
         app = call.data[ATTR_APP]
-        await _async_call_all_tvs(lambda c: c.async_launch_app(app))
+        for coordinator in _get_coordinators(call):
+            try:
+                await coordinator.async_launch_app(app)
+            except Exception as err:
+                _LOGGER.error("launch_app failed: %s", err)
+                raise HomeAssistantError("Failed to launch app on TV") from err
 
     # Only register services once
     if not hass.services.has_service(DOMAIN, SERVICE_SEND_KEY):

@@ -29,6 +29,7 @@
       "cannot_connect": "Failed to connect to TV. Make sure the TV is on and reachable.",
       "invalid_pin": "Invalid PIN. Please check the PIN on your TV and try again.",
       "pairing_failed": "Pairing failed. Please try again.",
+      "invalid_host": "Invalid host. Enter a valid IP address or hostname.",
       "unknown": "An unexpected error occurred."
     },
     "abort": {
@@ -36,7 +37,8 @@
       "cannot_connect": "Cannot connect to TV.",
       "no_host": "Could not determine TV host address.",
       "not_vidaa_tv": "Device is not a Hisense/Vidaa TV.",
-      "reauth_successful": "Reauthentication successful."
+      "reauth_successful": "Reauthentication successful.",
+      "too_many_attempts": "Too many failed PIN attempts. Please restart the setup."
     }
   },
   "options": {

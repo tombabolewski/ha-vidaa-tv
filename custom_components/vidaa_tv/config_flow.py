@@ -70,6 +70,8 @@ class VidaaTVConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
+    MAX_PIN_ATTEMPTS = 5
+
     def __init__(self) -> None:
         """Initialize the config flow."""
         self._host: str | None = None
@@ -80,6 +82,7 @@ class VidaaTVConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._model: str | None = None
         self._sw_version: str | None = None
         self._discovery_info: ssdp.SsdpServiceInfo | None = None
+        self._pin_attempts: int = 0
         # Keep single client alive across steps for pairing
         self._tv: AsyncVidaaTV | None = None
 
@@ -131,12 +134,25 @@ class VidaaTVConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            self._host = user_input[CONF_HOST]
+            host = user_input[CONF_HOST].strip()
+            # Basic host validation
+            if not re.match(r'^[\w.\-]+$', host):
+                errors["base"] = "invalid_host"
+                return self.async_show_form(
+                    step_id="user",
+                    data_schema=vol.Schema(
+                        {
+                            vol.Required(CONF_HOST): str,
+                            vol.Optional(CONF_PORT, default=DEFAULT_PORT): int,
+                        }
+                    ),
+                    errors=errors,
+                )
+            self._host = host
             self._port = user_input.get(CONF_PORT, DEFAULT_PORT)
 
             # Resolve MAC from ARP
             self._mac = await self._async_resolve_mac()
-            _LOGGER.debug("Resolved MAC from ARP: %s", self._mac)
 
             # Connect and start pairing
             await self._async_cleanup_client()
@@ -159,7 +175,6 @@ class VidaaTVConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         if info_mac:
                             self._mac = info_mac
                             self._device_id = self._mac
-                        _LOGGER.debug("Device info MAC: %s", info_mac)
 
                     # Use MAC as device_id for uniqueness
                     if self._mac:
@@ -205,6 +220,12 @@ class VidaaTVConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
+            self._pin_attempts += 1
+
+            if self._pin_attempts > self.MAX_PIN_ATTEMPTS:
+                await self._async_cleanup_client()
+                return self.async_abort(reason="too_many_attempts")
+
             pin = user_input.get("pin", "")
 
             if not self._tv:
@@ -291,7 +312,7 @@ class VidaaTVConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, discovery_info: ssdp.SsdpServiceInfo
     ) -> ConfigFlowResult:
         """Handle SSDP discovery."""
-        _LOGGER.debug("SSDP discovery: %s", discovery_info)
+        _LOGGER.debug("SSDP discovery from %s", discovery_info.ssdp_location)
 
         # Check for vidaa_support=1 in modelDescription
         model_desc = discovery_info.upnp.get("modelDescription", "")
