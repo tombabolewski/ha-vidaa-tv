@@ -8,7 +8,7 @@
   "integration_type": "device",
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/tombabolewski/ha-vidaa-tv/issues",
-  "requirements": ["vidaa-control@git+https://github.com/tombabolewski/vidaa-control.git@main"],
+  "requirements": ["vidaa-control==1.1.0"],
   "ssdp": [
     {
       "st": "urn:schemas-upnp-org:device:MediaRenderer:1"
