@@ -144,6 +144,7 @@ class VidaaTVConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         {
                             vol.Required(CONF_HOST): str,
                             vol.Optional(CONF_PORT, default=DEFAULT_PORT): int,
+                            vol.Optional(CONF_MAC, default=""): str,
                         }
                     ),
                     errors=errors,
@@ -152,7 +153,10 @@ class VidaaTVConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._port = user_input.get(CONF_PORT, DEFAULT_PORT)
 
             # Resolve MAC from ARP
-            self._mac = await self._async_resolve_mac()
+            self._mac = user_input.get(CONF_MAC) or await self._async_resolve_mac()
+            # Normalize empty string to None
+            if not self._mac:
+                self._mac = None
 
             # Connect and start pairing
             await self._async_cleanup_client()
@@ -204,6 +208,7 @@ class VidaaTVConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 {
                     vol.Required(CONF_HOST): str,
                     vol.Optional(CONF_PORT, default=DEFAULT_PORT): int,
+                    vol.Optional(CONF_MAC, default=""): str,
                 }
             ),
             errors=errors,
