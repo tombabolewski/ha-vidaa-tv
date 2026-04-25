@@ -96,9 +96,34 @@ class VidaaTVConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._tv = None
 
     async def _async_resolve_mac(self) -> str | None:
-        """Resolve MAC address from IP via ARP."""
+        """Resolve MAC address from IP via ARP.
+
+        Opens a brief TCP connection first to ensure the kernel's ARP cache is
+        populated. Without this the ARP entry may have expired and the lookup
+        returns nothing, which causes the MQTT client to be created without a
+        MAC address and therefore with a generic client_id that the TV rejects
+        (MQTT rc=5).
+        """
         if not self._host:
             return None
+        # Touch the host so the kernel resolves its MAC into the ARP cache.
+        # A failed connect is fine — ARP resolution happens before the TCP SYN.
+        def _touch_host() -> None:
+            import socket as _socket
+            s = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+            s.settimeout(2)
+            try:
+                s.connect((self._host, self._port))
+            except Exception:
+                pass
+            finally:
+                s.close()
+
+        try:
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, _touch_host)
+        except Exception:
+            pass
         try:
             loop = asyncio.get_running_loop()
             mac = await loop.run_in_executor(None, get_mac_from_ip, self._host)
@@ -107,6 +132,28 @@ class VidaaTVConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         except Exception as err:
             _LOGGER.debug("Could not resolve MAC from ARP: %s", err)
         return None
+
+    def _build_entry_data(self) -> dict:
+        """Build config entry data dict from current state."""
+        return {
+            CONF_HOST: self._host,
+            CONF_PORT: self._port,
+            CONF_NAME: self._name,
+            CONF_MAC: self._mac,
+            CONF_DEVICE_ID: self._device_id,
+            CONF_MODEL: self._model,
+            CONF_SW_VERSION: self._sw_version,
+        }
+
+    def _create_entry(self) -> ConfigFlowResult:
+        """Create config entry (or update on reauth)."""
+        data = self._build_entry_data()
+        if self.source == config_entries.SOURCE_REAUTH:
+            return self.async_update_reload_and_abort(
+                self._get_reauth_entry(),
+                data=data,
+            )
+        return self.async_create_entry(title=self._name, data=data)
 
     def _get_storage(self) -> TokenStorage:
         """Get token storage in HA config directory."""
@@ -186,6 +233,14 @@ class VidaaTVConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             updates={CONF_HOST: self._host, CONF_PORT: self._port}
                         )
 
+                    # LEGACY protocol TVs authenticate via static MQTT credentials —
+                    # no PIN dialog exists. Skip pairing and create entry directly.
+                    if self._tv.is_legacy_protocol:
+                        _LOGGER.debug("LEGACY protocol TV — skipping PIN pairing")
+                        await self._tv.async_disconnect()
+                        self._tv = None
+                        return self._create_entry()
+
                     # Start pairing - TV shows PIN
                     await self._tv.async_start_pairing()
                     # Brief pause to let PIN appear on TV
@@ -260,27 +315,7 @@ class VidaaTVConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                 updates={CONF_HOST: self._host, CONF_PORT: self._port}
                             )
 
-                        data = {
-                            CONF_HOST: self._host,
-                            CONF_PORT: self._port,
-                            CONF_NAME: self._name,
-                            CONF_MAC: self._mac,
-                            CONF_DEVICE_ID: self._device_id,
-                            CONF_MODEL: self._model,
-                            CONF_SW_VERSION: self._sw_version,
-                        }
-
-                        # Handle reauth
-                        if self.source == config_entries.SOURCE_REAUTH:
-                            return self.async_update_reload_and_abort(
-                                self._get_reauth_entry(),
-                                data=data,
-                            )
-
-                        return self.async_create_entry(
-                            title=self._name,
-                            data=data,
-                        )
+                        return self._create_entry()
                     else:
                         errors["base"] = "invalid_pin"
                         # Re-trigger pairing so TV shows PIN again
@@ -379,6 +414,12 @@ class VidaaTVConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     if info_mac:
                         self._mac = info_mac
                         self._device_id = self._mac
+
+                if self._tv.is_legacy_protocol:
+                    _LOGGER.debug("LEGACY protocol TV — skipping PIN pairing")
+                    await self._tv.async_disconnect()
+                    self._tv = None
+                    return self._create_entry()
 
                 await self._tv.async_start_pairing()
                 await asyncio.sleep(1)
