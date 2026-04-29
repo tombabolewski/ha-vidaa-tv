@@ -14,9 +14,11 @@ CONF_NAME: Final = "name"
 CONF_DEVICE_ID: Final = "device_id"
 CONF_MODEL: Final = "model"
 CONF_SW_VERSION: Final = "sw_version"
+CONF_BRAND: Final = "brand"
 # Default values
 DEFAULT_PORT: Final = 36669
 DEFAULT_NAME: Final = "Vidaa TV"
+DEFAULT_BRAND: Final = "his"
 
 # Timeouts
 TIMEOUT_CONNECT: Final = 10

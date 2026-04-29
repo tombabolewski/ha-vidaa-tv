@@ -30,8 +30,10 @@ from .const import (
     CONF_MAC,
     CONF_MODEL,
     CONF_SW_VERSION,
+    CONF_BRAND,
     DEFAULT_NAME,
     DEFAULT_PORT,
+    DEFAULT_BRAND,
     TIMEOUT_CONNECT,
     SCAN_INTERVAL,
 )
@@ -81,6 +83,7 @@ class VidaaTVConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._device_id: str | None = None
         self._model: str | None = None
         self._sw_version: str | None = None
+        self._brand: str = DEFAULT_BRAND
         self._discovery_info: ssdp.SsdpServiceInfo | None = None
         self._pin_attempts: int = 0
         # Keep single client alive across steps for pairing
@@ -123,6 +126,8 @@ class VidaaTVConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             port=self._port,
             use_dynamic_auth=True,
             mac_address=self._mac,
+            brand=self._brand,
+            auto_detect_protocol=False,
             enable_persistence=True,
             storage=self._get_storage(),
         )
@@ -153,6 +158,27 @@ class VidaaTVConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             # Resolve MAC from ARP
             self._mac = await self._async_resolve_mac()
+
+            # Try to detect brand via UPnP before connecting
+            try:
+                import aiohttp
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(
+                        f"http://{self._host}:18400/MediaServer/rendererdevicedesc.xml",
+                        timeout=aiohttp.ClientTimeout(total=3),
+                    ) as resp:
+                        if resp.status == 200:
+                            text = await resp.text()
+                            for line in text.split("\n"):
+                                if "brand=" in line:
+                                    _, _, val = line.partition("brand=")
+                                    val = val.strip()
+                                    if val:
+                                        self._brand = val
+                                        _LOGGER.debug("Detected brand: %s", self._brand)
+                                    break
+            except Exception:
+                _LOGGER.debug("Could not detect brand via UPnP, using default: %s", self._brand)
 
             # Connect and start pairing
             await self._async_cleanup_client()
@@ -268,6 +294,7 @@ class VidaaTVConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             CONF_DEVICE_ID: self._device_id,
                             CONF_MODEL: self._model,
                             CONF_SW_VERSION: self._sw_version,
+                            CONF_BRAND: self._brand,
                         }
 
                         # Handle reauth
@@ -326,6 +353,14 @@ class VidaaTVConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if not vidaa_support:
             return self.async_abort(reason="not_vidaa_tv")
+
+        # Extract brand from modelDescription (e.g. brand=lca for Leica)
+        for line in model_desc.split("\n"):
+            if "=" in line:
+                key, _, value = line.partition("=")
+                if key.strip() == "brand" and value.strip():
+                    self._brand = value.strip()
+                    break
 
         # Extract host
         self._host = discovery_info.ssdp_headers.get("_host") or discovery_info.ssdp_location
