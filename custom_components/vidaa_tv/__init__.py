@@ -19,7 +19,9 @@ from .const import (
     CONF_HOST,
     CONF_PORT,
     CONF_MAC,
+    CONF_BRAND,
     DEFAULT_PORT,
+    DEFAULT_BRAND,
     PLATFORMS,
     SERVICE_SEND_KEY,
     SERVICE_LAUNCH_APP,
@@ -61,8 +63,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: VidaaTVConfigEntry) -> b
     host = entry.data[CONF_HOST]
     port = entry.data.get(CONF_PORT, DEFAULT_PORT)
     mac = entry.data.get(CONF_MAC)
+    brand = entry.data.get(CONF_BRAND, DEFAULT_BRAND)
 
-    _LOGGER.debug("Setting up Vidaa TV at %s:%s", host, port)
+    _LOGGER.debug("Setting up Vidaa TV at %s:%s (brand=%s)", host, port, brand)
 
     # Set up token storage in HA config directory
     config_dir = Path(hass.config.config_dir)
@@ -73,7 +76,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: VidaaTVConfigEntry) -> b
         host=host,
         port=port,
         mac_address=mac,
+        brand=brand,
         use_dynamic_auth=True,
+        auto_detect_protocol=False,
         enable_persistence=True,
         storage=storage,
     )
