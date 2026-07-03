@@ -9,7 +9,7 @@ Home Assistant custom component for controlling Hisense/Vidaa Smart TVs. Communi
 - **Power on/off** with Wake-on-LAN support
 - **Volume control** — up/down/set/mute
 - **Input source selection** and **app launching** (Netflix, YouTube, Prime Video, Disney+, etc.)
-- **34 remote buttons** as HA button entities (d-pad, playback, channel, numbers, colors)
+- **35 remote buttons** as HA button entities (d-pad, volume, playback, channel, numbers, colors)
 - **Sensors** — current app and current source
 - **Mute switch** — toggle with state awareness
 - **SSDP auto-discovery** — TV detected automatically
@@ -21,7 +21,7 @@ Home Assistant custom component for controlling Hisense/Vidaa Smart TVs. Communi
 |----------|----------|-------------|
 | Media Player | 1 | Volume, power, source, app launching |
 | Remote | 1 | Key sending, activity (app) support |
-| Button | 33 | Individual remote keys (18 enabled + 15 disabled by default) |
+| Button | 35 | Individual remote keys (20 enabled + 15 disabled by default) |
 | Sensor | 2 | Current App, Current Source |
 | Switch | 1 | Mute toggle |
 
@@ -63,7 +63,8 @@ A ready-made Lovelace remote card is included in [`dashboard-remote-card.yaml`](
 - Power / Info / Home row
 - D-pad (up/down/left/right/OK)
 - Back / Menu / Exit
-- Channel up/down + mute
+- Volume up/down + mute
+- Channel up/down
 - Media player card with volume slider
 - Playback controls (rewind/play/pause/stop/ff)
 - Current app and source sensors

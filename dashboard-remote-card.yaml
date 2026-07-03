@@ -132,13 +132,13 @@ cards:
         show_name: true
         show_state: false
 
-  # Channel Up/Down + Mute
+  # Volume Up/Down + Mute
   - type: horizontal-stack
     cards:
       - type: button
-        entity: button.telewizor_channel_up
-        icon: mdi:arrow-up-bold
-        name: CH+
+        entity: button.telewizor_volume_down
+        icon: mdi:volume-minus
+        name: VOL-
         tap_action:
           action: toggle
         show_name: true
@@ -147,6 +147,26 @@ cards:
         entity: switch.telewizor_mute
         icon: mdi:volume-off
         name: Mute
+        tap_action:
+          action: toggle
+        show_name: true
+        show_state: false
+      - type: button
+        entity: button.telewizor_volume_up
+        icon: mdi:volume-plus
+        name: VOL+
+        tap_action:
+          action: toggle
+        show_name: true
+        show_state: false
+
+  # Channel Up/Down
+  - type: horizontal-stack
+    cards:
+      - type: button
+        entity: button.telewizor_channel_up
+        icon: mdi:arrow-up-bold
+        name: CH+
         tap_action:
           action: toggle
         show_name: true
