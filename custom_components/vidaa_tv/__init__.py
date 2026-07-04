@@ -8,10 +8,14 @@ from pathlib import Path
 
 import voluptuous as vol
 
+from homeassistant.components import frontend
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError, ServiceValidationError
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import target as target_helpers
 from homeassistant.helpers.typing import ConfigType
 
 from .const import (
@@ -35,6 +39,8 @@ _LOGGER = logging.getLogger(__name__)
 from vidaa import AsyncVidaaTV
 from vidaa.config import TokenStorage
 
+REMOTE_CARD_URL = "/vidaa_tv/vidaa-tv-remote-card.js"
+
 
 @dataclass
 class VidaaTVRuntimeData:
@@ -52,6 +58,16 @@ CONFIG_SCHEMA = cv.empty_config_schema(DOMAIN)
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the Vidaa TV integration."""
+    await hass.http.async_register_static_paths(
+        [
+            StaticPathConfig(
+                REMOTE_CARD_URL,
+                str(Path(__file__).parent / "www" / "vidaa-tv-remote-card.js"),
+                False,
+            ),
+        ]
+    )
+    frontend.add_extra_js_url(hass, REMOTE_CARD_URL)
     await _async_setup_services(hass)
     return True
 
@@ -108,6 +124,32 @@ async def async_setup_entry(hass: HomeAssistant, entry: VidaaTVConfigEntry) -> b
 async def _async_setup_services(hass: HomeAssistant) -> None:
     """Set up services for the integration."""
 
+    def _get_targeted_config_entry_ids(call: ServiceCall) -> set[str]:
+        """Return config entry IDs referenced by a service target."""
+        target_selection = target_helpers.TargetSelection(call.data)
+        referenced = target_helpers.async_extract_referenced_entity_ids(
+            hass,
+            target_selection,
+            True,
+        )
+
+        config_entry_ids: set[str] = set()
+        device_registry = dr.async_get(hass)
+        entity_registry = er.async_get(hass)
+
+        for device_id in referenced.referenced_devices:
+            device = device_registry.async_get(device_id)
+            if device:
+                config_entry_ids.update(device.config_entries)
+
+        entity_ids = referenced.referenced | referenced.indirectly_referenced
+        for entity_id in entity_ids:
+            entity_entry = entity_registry.async_get(entity_id)
+            if entity_entry and entity_entry.config_entry_id:
+                config_entry_ids.add(entity_entry.config_entry_id)
+
+        return config_entry_ids
+
     def _get_coordinators(call: ServiceCall) -> list[VidaaTVDataUpdateCoordinator]:
         """Get coordinators targeted by a service call."""
         entries = hass.config_entries.async_entries(DOMAIN)
@@ -117,10 +159,15 @@ async def _async_setup_services(hass: HomeAssistant) -> None:
                 translation_key="no_tvs_configured",
             )
 
+        targeted_config_entry_ids = _get_targeted_config_entry_ids(call)
         return [
             entry.runtime_data.coordinator
             for entry in entries
             if not entry.state.recoverable
+            and (
+                not targeted_config_entry_ids
+                or entry.entry_id in targeted_config_entry_ids
+            )
         ]
 
     async def async_send_key(call: ServiceCall) -> None:

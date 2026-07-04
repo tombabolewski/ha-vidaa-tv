@@ -58,7 +58,19 @@ No certificates or manual config needed — the library handles authentication a
 
 ## Dashboard Remote Card
 
-A ready-made Lovelace remote card is included in [`dashboard-remote-card.yaml`](dashboard-remote-card.yaml). Uses standard HA cards only (no HACS frontend dependencies):
+The integration registers a ready-made Lovelace custom card:
+
+```yaml
+type: custom:vidaa-tv-remote-card
+entity: remote.vidaa_tv_remote
+```
+
+After restarting Home Assistant, open a dashboard, add a card, pick the Vidaa TV
+remote/media player entity, and choose the **Vidaa TV Remote** suggestion. The
+card uses the selected TV's `remote` entity and automatically looks for matching
+`media_player` and current app/source sensors.
+
+A YAML-only fallback is also included in [`dashboard-remote-card.yaml`](dashboard-remote-card.yaml). It uses standard HA cards only:
 
 - Power / Info / Home row
 - D-pad (up/down/left/right/OK)
@@ -69,7 +81,11 @@ A ready-made Lovelace remote card is included in [`dashboard-remote-card.yaml`](
 - Playback controls (rewind/play/pause/stop/ff)
 - Current app and source sensors
 
-Copy the YAML into a manual card. Adjust entity IDs to match your TV's name.
+Copy the YAML into a manual card. Replace the sample `remote.vidaa_tv_remote`,
+`media_player.vidaa_tv`, and sensor entity IDs with the entities from the TV
+device you want to control. The remote buttons call `remote.send_command`, so
+you do not need to update every individual `button.*` entity when Home
+Assistant chooses a different device slug.
 
 ## Requirements
 
