@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.media_player import (
@@ -24,6 +25,7 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 PARALLEL_UPDATES = 1
+SOURCE_LIST_REFRESH_INTERVAL = 300
 
 
 async def async_setup_entry(
@@ -65,9 +67,11 @@ class VidaaTVMediaPlayer(VidaaTVEntity, MediaPlayerEntity):
         self._attr_unique_id = f"{self._device_id}_media_player" if self._device_id else entry.entry_id
 
         # Source and app caches
-        self._sources: list[str] = []
-        self._apps: list[dict] = []
+        self._sources: list[dict[str, Any]] = []
+        self._apps: list[dict[str, Any]] = []
         self._source_list: list[str] = []
+        self._last_source_list_update = 0.0
+        self._source_list_update_pending = False
 
     @property
     def available(self) -> bool:
@@ -124,25 +128,69 @@ class VidaaTVMediaPlayer(VidaaTVEntity, MediaPlayerEntity):
             return None
         return self.coordinator.data.get("app")
 
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return Vidaa-specific app and source lists for dashboard cards."""
+        return {
+            "vidaa_apps": [
+                app["name"]
+                for app in self._apps
+                if isinstance(app, dict) and app.get("name")
+            ],
+            "vidaa_sources": [
+                label
+                for source in self._sources
+                if isinstance(source, dict)
+                for label in [self._source_label(source)]
+                if label
+            ],
+        }
+
+    @staticmethod
+    def _source_label(source: dict[str, Any]) -> str | None:
+        """Return the display label for a Vidaa source."""
+        label = (
+            source.get("sourcename")
+            or source.get("displayname")
+            or source.get("name")
+            or source.get("sourceid")
+        )
+        return str(label) if label is not None else None
+
     async def async_added_to_hass(self) -> None:
         """Run when entity is added to hass."""
         await super().async_added_to_hass()
         await self._async_update_sources()
 
+    def _handle_coordinator_update(self) -> None:
+        """Schedule source/app list refreshes when cached lists are missing."""
+        super()._handle_coordinator_update()
+        update_age = time.monotonic() - self._last_source_list_update
+        if (
+            not self._source_list_update_pending
+            and (not self._source_list or update_age > SOURCE_LIST_REFRESH_INTERVAL)
+        ):
+            self.hass.async_create_task(self._async_update_sources())
+
     async def _async_update_sources(self) -> None:
         """Update source list from TV."""
+        self._source_list_update_pending = True
+        self._last_source_list_update = time.monotonic()
         try:
             sources = await self.coordinator.async_get_sources()
             if sources and isinstance(sources, list):
+                _LOGGER.debug("Vidaa source list: %s", sources)
                 self._sources = sources
                 self._source_list = []
                 for s in sources:
                     if isinstance(s, dict):
-                        name = s.get("sourcename", s.get("name", f"Source {s.get('sourceid', '?')}"))
-                        self._source_list.append(name)
+                        name = self._source_label(s)
+                        if name:
+                            self._source_list.append(name)
 
             apps = await self.coordinator.async_get_apps()
             if apps and isinstance(apps, list):
+                _LOGGER.debug("Vidaa app list: %s", apps)
                 self._apps = apps
                 for app in apps:
                     if isinstance(app, dict):
@@ -152,6 +200,9 @@ class VidaaTVMediaPlayer(VidaaTVEntity, MediaPlayerEntity):
 
         except Exception as err:
             _LOGGER.debug("Error updating sources: %s", err)
+        finally:
+            self._source_list_update_pending = False
+            self.async_write_ha_state()
 
     async def async_turn_on(self) -> None:
         """Turn the TV on."""
@@ -180,12 +231,50 @@ class VidaaTVMediaPlayer(VidaaTVEntity, MediaPlayerEntity):
 
     async def async_select_source(self, source: str) -> None:
         """Select input source."""
+        _LOGGER.debug("Vidaa select_source requested: %s", source)
         for app in self._apps:
             if app.get("name") == source:
+                _LOGGER.debug("Vidaa select_source matched app: %s", app)
                 await self.coordinator.async_launch_app(source)
                 return
 
-        await self.coordinator.async_select_source(source)
+        source_id = source
+        source_name = source
+        for source_info in self._sources:
+            if not isinstance(source_info, dict):
+                continue
+
+            source_names = {
+                source_info.get("sourcename"),
+                source_info.get("displayname"),
+                source_info.get("name"),
+                source_info.get("sourceid"),
+            }
+            source_names = {
+                str(source_name).casefold()
+                for source_name in source_names
+                if source_name is not None
+            }
+
+            if source.casefold() in source_names:
+                source_id = str(source_info.get("sourceid", source))
+                source_name = str(
+                    source_info.get("sourcename")
+                    or source_info.get("displayname")
+                    or source
+                )
+                _LOGGER.debug(
+                    "Vidaa select_source matched source: requested=%s source=%s source_id=%s",
+                    source,
+                    source_info,
+                    source_id,
+                )
+                break
+
+        if source_id == source:
+            _LOGGER.debug("Vidaa select_source did not find source id for: %s", source)
+
+        await self.coordinator.async_select_source(source_id, source_name)
 
     async def async_media_play(self) -> None:
         """Send play command."""
@@ -201,11 +290,11 @@ class VidaaTVMediaPlayer(VidaaTVEntity, MediaPlayerEntity):
 
     async def async_media_next_track(self) -> None:
         """Send next track command."""
-        await self.coordinator.async_send_key("KEY_FAST_FORWARD")
+        await self.coordinator.async_send_key("KEY_FORWARDS")
 
     async def async_media_previous_track(self) -> None:
         """Send previous track command."""
-        await self.coordinator.async_send_key("KEY_REWIND")
+        await self.coordinator.async_send_key("KEY_BACK")
 
     async def async_play_media(
         self, media_type: str, media_id: str, **kwargs: Any

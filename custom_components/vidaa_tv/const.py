@@ -54,19 +54,22 @@ BUTTON_KEYS: Final = [
     ("left", "Left", "mdi:arrow-left", "KEY_LEFT", True),
     ("right", "Right", "mdi:arrow-right", "KEY_RIGHT", True),
     ("ok", "OK", "mdi:checkbox-blank-circle", "KEY_OK", True),
-    ("back", "Back", "mdi:arrow-u-left-top", "KEY_BACK", True),
+    ("back", "Back", "mdi:arrow-u-left-top", "KEY_RETURNS", True),
     ("menu", "Menu", "mdi:menu", "KEY_MENU", True),
     ("home", "Home", "mdi:home", "KEY_HOME", True),
     ("exit", "Exit", "mdi:close-box", "KEY_EXIT", True),
+    # Volume
+    ("volume_up", "Volume Up", "mdi:volume-plus", "KEY_VOLUMEUP", True),
+    ("volume_down", "Volume Down", "mdi:volume-minus", "KEY_VOLUMEDOWN", True),
     # Channel
-    ("channel_up", "Channel Up", "mdi:arrow-up-bold", "KEY_CHANNEL_UP", True),
-    ("channel_down", "Channel Down", "mdi:arrow-down-bold", "KEY_CHANNEL_DOWN", True),
+    ("channel_up", "Channel Up", "mdi:arrow-up-bold", "KEY_CHANNELUP", True),
+    ("channel_down", "Channel Down", "mdi:arrow-down-bold", "KEY_CHANNELDOWN", True),
     # Playback
     ("play", "Play", "mdi:play", "KEY_PLAY", True),
     ("pause", "Pause", "mdi:pause", "KEY_PAUSE", True),
     ("stop", "Stop", "mdi:stop", "KEY_STOP", True),
-    ("fast_forward", "Fast Forward", "mdi:fast-forward", "KEY_FAST_FORWARD", True),
-    ("rewind", "Rewind", "mdi:rewind", "KEY_REWIND", True),
+    ("fast_forward", "Fast Forward", "mdi:fast-forward", "KEY_FORWARDS", True),
+    ("rewind", "Rewind", "mdi:rewind", "KEY_BACK", True),
     # Info
     ("info", "Info", "mdi:information", "KEY_INFO", True),
     # Color buttons (disabled by default)

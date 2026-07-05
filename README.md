@@ -9,7 +9,7 @@ Home Assistant custom component for controlling Hisense/Vidaa Smart TVs. Communi
 - **Power on/off** with Wake-on-LAN support
 - **Volume control** — up/down/set/mute
 - **Input source selection** and **app launching** (Netflix, YouTube, Prime Video, Disney+, etc.)
-- **34 remote buttons** as HA button entities (d-pad, playback, channel, numbers, colors)
+- **35 remote buttons** as HA button entities (d-pad, volume, playback, channel, numbers, colors)
 - **Sensors** — current app and current source
 - **Mute switch** — toggle with state awareness
 - **SSDP auto-discovery** — TV detected automatically
@@ -21,7 +21,7 @@ Home Assistant custom component for controlling Hisense/Vidaa Smart TVs. Communi
 |----------|----------|-------------|
 | Media Player | 1 | Volume, power, source, app launching |
 | Remote | 1 | Key sending, activity (app) support |
-| Button | 33 | Individual remote keys (18 enabled + 15 disabled by default) |
+| Button | 35 | Individual remote keys (20 enabled + 15 disabled by default) |
 | Sensor | 2 | Current App, Current Source |
 | Switch | 1 | Mute toggle |
 
@@ -58,17 +58,53 @@ No certificates or manual config needed — the library handles authentication a
 
 ## Dashboard Remote Card
 
-A ready-made Lovelace remote card is included in [`dashboard-remote-card.yaml`](dashboard-remote-card.yaml). Uses standard HA cards only (no HACS frontend dependencies):
+The integration registers a ready-made Lovelace custom card:
+
+```yaml
+type: custom:vidaa-tv-remote-card
+entity: remote.vidaa_tv_remote
+```
+
+After restarting Home Assistant, the integration registers the card as a
+Lovelace module resource in storage mode. Open a dashboard, edit it, add a card,
+and search for **Vidaa TV Remote** under community/custom cards. This does not
+replace the standard Home Assistant device page; that page will still show the
+usual Device info, Controls, and Activity sections. The card uses the selected
+TV's `remote` entity and automatically looks for matching `media_player` and
+current app/source sensors.
+
+If Lovelace resources are configured in YAML mode, add this resource manually:
+
+```yaml
+url: /vidaa_tv/vidaa-tv-remote-card.js?v=1.2.0
+type: module
+```
+
+If the card is not listed, verify that the frontend module is available at
+`/vidaa_tv/vidaa-tv-remote-card.js?v=1.2.0`, then hard-refresh the browser. You can
+also add the card manually:
+
+```yaml
+type: custom:vidaa-tv-remote-card
+entity: remote.vidaa_tv_remote
+```
+
+A YAML-only fallback is also included in [`dashboard-remote-card.yaml`](dashboard-remote-card.yaml). It uses standard HA cards only:
 
 - Power / Info / Home row
 - D-pad (up/down/left/right/OK)
 - Back / Menu / Exit
-- Channel up/down + mute
+- Volume up/down + mute
+- Channel up/down
 - Media player card with volume slider
 - Playback controls (rewind/play/pause/stop/ff)
 - Current app and source sensors
 
-Copy the YAML into a manual card. Adjust entity IDs to match your TV's name.
+Copy the YAML into a manual card. Replace the sample `remote.vidaa_tv_remote`,
+`media_player.vidaa_tv`, and sensor entity IDs with the entities from the TV
+device you want to control. The remote buttons call `remote.send_command`, so
+you do not need to update every individual `button.*` entity when Home
+Assistant chooses a different device slug.
 
 ## Requirements
 

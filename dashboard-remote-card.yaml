@@ -1,7 +1,14 @@
 # Vidaa TV Remote Card for Home Assistant Dashboard
 # Copy this into a manual card or dashboard YAML.
-# Entity IDs use the TV's name slug (e.g. "telewizor").
-# Adjust if your TV has a different name.
+#
+# Replace these three entity IDs with entities from your TV device:
+# - remote.vidaa_tv_remote
+# - media_player.vidaa_tv
+# - sensor.vidaa_tv_current_app / sensor.vidaa_tv_current_source
+#
+# The remote buttons use remote.send_command instead of button.* entities, so
+# the card only depends on the selected TV's remote entity and works better
+# when several Vidaa TVs are configured.
 
 type: vertical-stack
 cards:
@@ -9,27 +16,37 @@ cards:
   - type: horizontal-stack
     cards:
       - type: button
-        entity: button.telewizor_power
         icon: mdi:power
         name: Power
         tap_action:
-          action: toggle
+          action: perform-action
+          perform_action: homeassistant.toggle
+          target:
+            entity_id: media_player.vidaa_tv
         show_name: false
         show_state: false
       - type: button
-        entity: button.telewizor_info
         icon: mdi:information
         name: Info
         tap_action:
-          action: toggle
+          action: perform-action
+          perform_action: remote.send_command
+          target:
+            entity_id: remote.vidaa_tv_remote
+          data:
+            command: KEY_INFO
         show_name: false
         show_state: false
       - type: button
-        entity: button.telewizor_home
         icon: mdi:home
         name: Home
         tap_action:
-          action: toggle
+          action: perform-action
+          perform_action: remote.send_command
+          target:
+            entity_id: remote.vidaa_tv_remote
+          data:
+            command: KEY_HOME
         show_name: false
         show_state: false
 
@@ -43,10 +60,14 @@ cards:
         show_state: false
         show_icon: false
       - type: button
-        entity: button.telewizor_up
         icon: mdi:arrow-up
         tap_action:
-          action: toggle
+          action: perform-action
+          perform_action: remote.send_command
+          target:
+            entity_id: remote.vidaa_tv_remote
+          data:
+            command: KEY_UP
         show_name: false
         show_state: false
       - type: button
@@ -60,24 +81,36 @@ cards:
   - type: horizontal-stack
     cards:
       - type: button
-        entity: button.telewizor_left
         icon: mdi:arrow-left
         tap_action:
-          action: toggle
+          action: perform-action
+          perform_action: remote.send_command
+          target:
+            entity_id: remote.vidaa_tv_remote
+          data:
+            command: KEY_LEFT
         show_name: false
         show_state: false
       - type: button
-        entity: button.telewizor_ok
         icon: mdi:checkbox-blank-circle
         tap_action:
-          action: toggle
+          action: perform-action
+          perform_action: remote.send_command
+          target:
+            entity_id: remote.vidaa_tv_remote
+          data:
+            command: KEY_OK
         show_name: false
         show_state: false
       - type: button
-        entity: button.telewizor_right
         icon: mdi:arrow-right
         tap_action:
-          action: toggle
+          action: perform-action
+          perform_action: remote.send_command
+          target:
+            entity_id: remote.vidaa_tv_remote
+          data:
+            command: KEY_RIGHT
         show_name: false
         show_state: false
 
@@ -91,10 +124,14 @@ cards:
         show_state: false
         show_icon: false
       - type: button
-        entity: button.telewizor_down
         icon: mdi:arrow-down
         tap_action:
-          action: toggle
+          action: perform-action
+          perform_action: remote.send_command
+          target:
+            entity_id: remote.vidaa_tv_remote
+          data:
+            command: KEY_DOWN
         show_name: false
         show_state: false
       - type: button
@@ -108,98 +145,170 @@ cards:
   - type: horizontal-stack
     cards:
       - type: button
-        entity: button.telewizor_back
         icon: mdi:arrow-u-left-top
         name: Back
         tap_action:
-          action: toggle
+          action: perform-action
+          perform_action: remote.send_command
+          target:
+            entity_id: remote.vidaa_tv_remote
+          data:
+            command: KEY_RETURNS
         show_name: true
         show_state: false
       - type: button
-        entity: button.telewizor_menu
         icon: mdi:menu
         name: Menu
         tap_action:
-          action: toggle
+          action: perform-action
+          perform_action: remote.send_command
+          target:
+            entity_id: remote.vidaa_tv_remote
+          data:
+            command: KEY_MENU
         show_name: true
         show_state: false
       - type: button
-        entity: button.telewizor_exit
         icon: mdi:close-box
         name: Exit
         tap_action:
-          action: toggle
+          action: perform-action
+          perform_action: remote.send_command
+          target:
+            entity_id: remote.vidaa_tv_remote
+          data:
+            command: KEY_EXIT
         show_name: true
         show_state: false
 
-  # Channel Up/Down + Mute
+  # Volume Up/Down + Mute
   - type: horizontal-stack
     cards:
       - type: button
-        entity: button.telewizor_channel_up
-        icon: mdi:arrow-up-bold
-        name: CH+
+        icon: mdi:volume-minus
+        name: VOL-
         tap_action:
-          action: toggle
+          action: perform-action
+          perform_action: remote.send_command
+          target:
+            entity_id: remote.vidaa_tv_remote
+          data:
+            command: KEY_VOLUMEDOWN
         show_name: true
         show_state: false
       - type: button
-        entity: switch.telewizor_mute
         icon: mdi:volume-off
         name: Mute
         tap_action:
-          action: toggle
+          action: perform-action
+          perform_action: remote.send_command
+          target:
+            entity_id: remote.vidaa_tv_remote
+          data:
+            command: KEY_MUTE
         show_name: true
         show_state: false
       - type: button
-        entity: button.telewizor_channel_down
+        icon: mdi:volume-plus
+        name: VOL+
+        tap_action:
+          action: perform-action
+          perform_action: remote.send_command
+          target:
+            entity_id: remote.vidaa_tv_remote
+          data:
+            command: KEY_VOLUMEUP
+        show_name: true
+        show_state: false
+
+  # Channel Up/Down
+  - type: horizontal-stack
+    cards:
+      - type: button
+        icon: mdi:arrow-up-bold
+        name: CH+
+        tap_action:
+          action: perform-action
+          perform_action: remote.send_command
+          target:
+            entity_id: remote.vidaa_tv_remote
+          data:
+            command: KEY_CHANNELUP
+        show_name: true
+        show_state: false
+      - type: button
         icon: mdi:arrow-down-bold
         name: CH-
         tap_action:
-          action: toggle
+          action: perform-action
+          perform_action: remote.send_command
+          target:
+            entity_id: remote.vidaa_tv_remote
+          data:
+            command: KEY_CHANNELDOWN
         show_name: true
         show_state: false
 
   # Media player card with volume slider
   - type: media-control
-    entity: media_player.telewizor
+    entity: media_player.vidaa_tv
 
   # Playback row
   - type: horizontal-stack
     cards:
       - type: button
-        entity: button.telewizor_rewind
         icon: mdi:rewind
         tap_action:
-          action: toggle
+          action: perform-action
+          perform_action: remote.send_command
+          target:
+            entity_id: remote.vidaa_tv_remote
+          data:
+            command: KEY_BACK
         show_name: false
         show_state: false
       - type: button
-        entity: button.telewizor_play
         icon: mdi:play
         tap_action:
-          action: toggle
+          action: perform-action
+          perform_action: remote.send_command
+          target:
+            entity_id: remote.vidaa_tv_remote
+          data:
+            command: KEY_PLAY
         show_name: false
         show_state: false
       - type: button
-        entity: button.telewizor_pause
         icon: mdi:pause
         tap_action:
-          action: toggle
+          action: perform-action
+          perform_action: remote.send_command
+          target:
+            entity_id: remote.vidaa_tv_remote
+          data:
+            command: KEY_PAUSE
         show_name: false
         show_state: false
       - type: button
-        entity: button.telewizor_stop
         icon: mdi:stop
         tap_action:
-          action: toggle
+          action: perform-action
+          perform_action: remote.send_command
+          target:
+            entity_id: remote.vidaa_tv_remote
+          data:
+            command: KEY_STOP
         show_name: false
         show_state: false
       - type: button
-        entity: button.telewizor_fast_forward
         icon: mdi:fast-forward
         tap_action:
-          action: toggle
+          action: perform-action
+          perform_action: remote.send_command
+          target:
+            entity_id: remote.vidaa_tv_remote
+          data:
+            command: KEY_FORWARDS
         show_name: false
         show_state: false
 
@@ -207,10 +316,10 @@ cards:
   - type: horizontal-stack
     cards:
       - type: entity
-        entity: sensor.telewizor_current_app
+        entity: sensor.vidaa_tv_current_app
         name: App
         icon: mdi:apps
       - type: entity
-        entity: sensor.telewizor_current_source
+        entity: sensor.vidaa_tv_current_source
         name: Source
         icon: mdi:video-input-hdmi

@@ -3,7 +3,7 @@
   "name": "Vidaa TV",
   "codeowners": ["@tombabolewski"],
   "config_flow": true,
-  "dependencies": [],
+  "dependencies": ["frontend", "lovelace"],
   "documentation": "https://github.com/tombabolewski/ha-vidaa-tv",
   "integration_type": "device",
   "iot_class": "local_polling",
