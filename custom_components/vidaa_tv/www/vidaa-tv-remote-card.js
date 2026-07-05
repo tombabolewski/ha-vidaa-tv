@@ -233,6 +233,8 @@ class VidaaTVRemoteCard extends HTMLElement {
       mediaPlayerName: mediaPlayerState?.attributes?.friendly_name,
       mediaPlayerSource: mediaPlayerState?.attributes?.source,
       mediaPlayerApp: mediaPlayerState?.attributes?.app_name,
+      vidaaApps: mediaPlayerState?.attributes?.vidaa_apps,
+      vidaaSources: mediaPlayerState?.attributes?.vidaa_sources,
       appState: appState?.state,
       sourceState: sourceState?.state,
       appOptions,
@@ -316,6 +318,11 @@ class VidaaTVRemoteCard extends HTMLElement {
 
   _sourceOptions() {
     const mediaPlayerState = this._mediaPlayerState();
+    const vidaaSources = mediaPlayerState?.attributes?.vidaa_sources;
+    if (Array.isArray(vidaaSources)) {
+      return vidaaSources.filter((source) => typeof source === "string" && source);
+    }
+
     const sourceList = mediaPlayerState?.attributes?.source_list;
     if (!Array.isArray(sourceList)) {
       return [];
@@ -329,30 +336,33 @@ class VidaaTVRemoteCard extends HTMLElement {
   }
 
   _appOptions() {
+    const mediaPlayerState = this._mediaPlayerState();
+    const vidaaApps = mediaPlayerState?.attributes?.vidaa_apps;
+    if (Array.isArray(vidaaApps)) {
+      return vidaaApps.filter((app) => typeof app === "string" && app);
+    }
+
     const remoteState = this._remoteState();
     const activityList = remoteState?.attributes?.activity_list;
     if (Array.isArray(activityList) && activityList.length > 0) {
       return activityList.filter((app) => typeof app === "string" && app);
     }
 
-    const mediaPlayerState = this._mediaPlayerState();
     const appName = mediaPlayerState?.attributes?.app_name;
     return typeof appName === "string" && appName ? [appName] : [];
   }
 
   _selectTemplate(label, value, options, type) {
     const normalizedValue = this._normalize(value);
-    const currentValue =
-      normalizedValue === "unavailable"
-        ? ""
-        : normalizedValue === "unknown"
-          ? "Unknown"
-          : value;
+    const isUnavailable = normalizedValue === "unavailable";
+    const isUnknown = normalizedValue === "unknown";
+    const currentValue = isUnavailable || isUnknown ? "" : value;
     const selectOptions =
       currentValue && !options.includes(currentValue)
         ? [currentValue, ...options]
         : options;
     const hasOptions = selectOptions.length > 0;
+    const placeholder = isUnknown ? "Unknown" : "Unavailable";
     return `
       <div class="select-item">
         <label>${label}</label>
@@ -363,9 +373,11 @@ class VidaaTVRemoteCard extends HTMLElement {
         >
           ${
             hasOptions
-              ? selectOptions
-                  .map(
-                    (option) => `
+              ? `
+                  ${isUnknown ? `<option value="" disabled selected>Unknown</option>` : ""}
+                  ${selectOptions
+                    .map(
+                      (option) => `
                       <option
                         value="${this._escape(option)}"
                         ${option === currentValue ? "selected" : ""}
@@ -373,9 +385,10 @@ class VidaaTVRemoteCard extends HTMLElement {
                         ${this._escape(option)}
                       </option>
                     `,
-                  )
-                  .join("")
-              : `<option value="">Unavailable</option>`
+                    )
+                    .join("")}
+                `
+              : `<option value="">${placeholder}</option>`
           }
         </select>
       </div>

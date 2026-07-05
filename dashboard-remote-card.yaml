@@ -20,7 +20,7 @@ cards:
         name: Power
         tap_action:
           action: perform-action
-          perform_action: media_player.toggle
+          perform_action: homeassistant.toggle
           target:
             entity_id: media_player.vidaa_tv
         show_name: false

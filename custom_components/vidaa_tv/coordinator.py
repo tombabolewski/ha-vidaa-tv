@@ -293,16 +293,20 @@ class VidaaTVDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def _publish_source_exact(self, source: str) -> bool:
         """Publish a source ID exactly until vidaa-control exposes this directly."""
-        client = getattr(self.tv, "_client", None)
-        if not client or not hasattr(client, "_publish"):
-            return False
+        try:
+            client = getattr(self.tv, "_client", None)
+            if not client or not hasattr(client, "_publish"):
+                return False
 
-        client_id = getattr(client, "client_id", None)
-        if not client_id:
-            return False
+            client_id = getattr(client, "client_id", None)
+            if not client_id:
+                return False
 
-        topic = get_topic(TOPIC_SET_SOURCE, client_id)
-        return client._publish(topic, {"sourceid": source})
+            topic = get_topic(TOPIC_SET_SOURCE, client_id)
+            return bool(client._publish(topic, {"sourceid": source}))
+        except Exception as err:
+            _LOGGER.debug("Exact Vidaa source publish raised for %s: %s", source, err)
+            return False
 
     async def async_select_source(self, source: str, source_name: str | None = None) -> None:
         """Select input source."""
@@ -316,7 +320,8 @@ class VidaaTVDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             result = await self.tv.async_set_source(source)
 
         _LOGGER.debug("Vidaa source change result for %s: %s", source, result)
-        self._set_media_context(app=None, source=source_name or source, statetype="sourceswitch")
+        if result:
+            self._set_media_context(app=None, source=source_name or source, statetype="sourceswitch")
         await self.async_request_refresh()
 
     async def async_send_key(self, key: str) -> None:
@@ -325,8 +330,9 @@ class VidaaTVDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def async_launch_app(self, app_name: str) -> None:
         """Launch app."""
-        await self.tv.async_launch_app(app_name)
-        self._set_media_context(app=app_name, source=None, statetype="app")
+        result = await self.tv.async_launch_app(app_name)
+        if result:
+            self._set_media_context(app=app_name, source=None, statetype="app")
         await self.async_request_refresh()
 
     async def async_get_apps(self) -> list[dict] | None:

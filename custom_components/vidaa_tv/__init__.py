@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from functools import lru_cache
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -52,11 +53,23 @@ from vidaa import AsyncVidaaTV
 from vidaa.config import TokenStorage
 
 REMOTE_CARD_PATH = "/vidaa_tv/vidaa-tv-remote-card.js"
-_MANIFEST_VERSION = json.loads((Path(__file__).parent / "manifest.json").read_text()).get(
-    "version",
-    "dev",
-)
-REMOTE_CARD_RESOURCE_URL = f"{REMOTE_CARD_PATH}?v={_MANIFEST_VERSION}"
+
+
+@lru_cache(maxsize=1)
+def _manifest_version() -> str:
+    """Return the integration version for frontend cache busting."""
+    try:
+        manifest = json.loads((Path(__file__).parent / "manifest.json").read_text())
+    except (OSError, json.JSONDecodeError) as err:
+        _LOGGER.debug("Could not read Vidaa TV manifest version: %s", err)
+        return "dev"
+    return manifest.get("version", "dev")
+
+
+async def _async_remote_card_resource_url(hass: HomeAssistant) -> str:
+    """Return the frontend resource URL with a release-version cache buster."""
+    version = await hass.async_add_executor_job(_manifest_version)
+    return f"{REMOTE_CARD_PATH}?v={version}"
 
 
 @dataclass
@@ -91,6 +104,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 async def _async_register_lovelace_resource(hass: HomeAssistant) -> None:
     """Register the bundled remote card as a Lovelace module resource."""
+    remote_card_resource_url = await _async_remote_card_resource_url(hass)
     lovelace_data = hass.data.get(LOVELACE_DATA)
     if lovelace_data is None:
         _LOGGER.debug("Lovelace is not loaded; skipping Vidaa TV card resource")
@@ -106,12 +120,12 @@ async def _async_register_lovelace_resource(hass: HomeAssistant) -> None:
     ]
 
     if matching_resources and lovelace_data.resource_mode != MODE_STORAGE:
-        if not any(item.get(CONF_URL) == REMOTE_CARD_RESOURCE_URL for item in matching_resources):
+        if not any(item.get(CONF_URL) == remote_card_resource_url for item in matching_resources):
             _LOGGER.info(
                 "Vidaa TV remote card is available at %s. Update the "
                 "Lovelace resource manually because Lovelace resources are "
                 "in YAML mode.",
-                REMOTE_CARD_RESOURCE_URL,
+                remote_card_resource_url,
             )
         return
 
@@ -119,18 +133,18 @@ async def _async_register_lovelace_resource(hass: HomeAssistant) -> None:
         _LOGGER.info(
             "Vidaa TV remote card is available at %s. Add it to Lovelace "
             "resources manually because Lovelace resources are in YAML mode.",
-            REMOTE_CARD_RESOURCE_URL,
+            remote_card_resource_url,
         )
         return
 
     if matching_resources:
         current_resource = matching_resources[0]
-        if current_resource.get(CONF_URL) != REMOTE_CARD_RESOURCE_URL:
+        if current_resource.get(CONF_URL) != remote_card_resource_url:
             await resource_collection.async_update_item(
                 current_resource[CONF_ID],
                 {
                     CONF_RESOURCE_TYPE_WS: "module",
-                    CONF_URL: REMOTE_CARD_RESOURCE_URL,
+                    CONF_URL: remote_card_resource_url,
                 },
             )
             _LOGGER.info("Updated Vidaa TV remote card Lovelace resource")
@@ -143,7 +157,7 @@ async def _async_register_lovelace_resource(hass: HomeAssistant) -> None:
     await resource_collection.async_create_item(
         {
             CONF_RESOURCE_TYPE_WS: "module",
-            CONF_URL: REMOTE_CARD_RESOURCE_URL,
+            CONF_URL: remote_card_resource_url,
         }
     )
     _LOGGER.info("Registered Vidaa TV remote card Lovelace resource")
@@ -201,6 +215,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: VidaaTVConfigEntry) -> b
 async def _async_setup_services(hass: HomeAssistant) -> None:
     """Set up services for the integration."""
 
+    def _has_service_target(call: ServiceCall) -> bool:
+        """Return true if the service call included an entity/device/area target."""
+        return any(
+            call.data.get(key)
+            for key in (ATTR_ENTITY_ID, ATTR_DEVICE_ID, ATTR_AREA_ID)
+        )
+
     def _get_targeted_config_entry_ids(call: ServiceCall) -> set[str]:
         """Return config entry IDs referenced by a service target."""
         target_selection = target_helpers.TargetSelection(call.data)
@@ -237,6 +258,9 @@ async def _async_setup_services(hass: HomeAssistant) -> None:
             )
 
         targeted_config_entry_ids = _get_targeted_config_entry_ids(call)
+        if _has_service_target(call) and not targeted_config_entry_ids:
+            raise ServiceValidationError("No Vidaa TV devices matched the service target")
+
         return [
             entry.runtime_data.coordinator
             for entry in entries
