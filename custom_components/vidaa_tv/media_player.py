@@ -134,6 +134,7 @@ class VidaaTVMediaPlayer(VidaaTVEntity, MediaPlayerEntity):
         try:
             sources = await self.coordinator.async_get_sources()
             if sources and isinstance(sources, list):
+                _LOGGER.debug("Vidaa source list: %s", sources)
                 self._sources = sources
                 self._source_list = []
                 for s in sources:
@@ -143,6 +144,7 @@ class VidaaTVMediaPlayer(VidaaTVEntity, MediaPlayerEntity):
 
             apps = await self.coordinator.async_get_apps()
             if apps and isinstance(apps, list):
+                _LOGGER.debug("Vidaa app list: %s", apps)
                 self._apps = apps
                 for app in apps:
                     if isinstance(app, dict):
@@ -180,12 +182,50 @@ class VidaaTVMediaPlayer(VidaaTVEntity, MediaPlayerEntity):
 
     async def async_select_source(self, source: str) -> None:
         """Select input source."""
+        _LOGGER.debug("Vidaa select_source requested: %s", source)
         for app in self._apps:
             if app.get("name") == source:
+                _LOGGER.debug("Vidaa select_source matched app: %s", app)
                 await self.coordinator.async_launch_app(source)
                 return
 
-        await self.coordinator.async_select_source(source)
+        source_id = source
+        source_name = source
+        for source_info in self._sources:
+            if not isinstance(source_info, dict):
+                continue
+
+            source_names = {
+                source_info.get("sourcename"),
+                source_info.get("displayname"),
+                source_info.get("name"),
+                source_info.get("sourceid"),
+            }
+            source_names = {
+                str(source_name).casefold()
+                for source_name in source_names
+                if source_name is not None
+            }
+
+            if source.casefold() in source_names:
+                source_id = str(source_info.get("sourceid", source))
+                source_name = str(
+                    source_info.get("sourcename")
+                    or source_info.get("displayname")
+                    or source
+                )
+                _LOGGER.debug(
+                    "Vidaa select_source matched source: requested=%s source=%s source_id=%s",
+                    source,
+                    source_info,
+                    source_id,
+                )
+                break
+
+        if source_id == source:
+            _LOGGER.debug("Vidaa select_source did not find source id for: %s", source)
+
+        await self.coordinator.async_select_source(source_id, source_name)
 
     async def async_media_play(self) -> None:
         """Send play command."""

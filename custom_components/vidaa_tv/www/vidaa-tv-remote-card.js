@@ -45,9 +45,17 @@ class VidaaTVRemoteCard extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: "open" });
+    this._lastSelectCall = { key: "", time: 0 };
+    this._lastRenderKey = "";
+    this._pending = {
+      app: { value: "", time: 0 },
+      source: { value: "", time: 0 },
+    };
+    this._selectInteractingUntil = 0;
   }
 
   setConfig(config) {
+    config = config || {};
     this.config = {
       entity: config.entity || config.remote_entity || DEFAULT_REMOTE,
       ...config,
@@ -146,6 +154,15 @@ class VidaaTVRemoteCard extends HTMLElement {
     return undefined;
   }
 
+  _remoteState() {
+    return this._hass?.states[this._remoteEntity()];
+  }
+
+  _mediaPlayerState() {
+    const mediaPlayer = this._mediaPlayerEntity();
+    return mediaPlayer ? this._hass?.states[mediaPlayer] : undefined;
+  }
+
   _sensorEntity(kind) {
     const configKey = kind === "app" ? "app_sensor_entity" : "source_sensor_entity";
     if (this.config[configKey]) {
@@ -168,6 +185,63 @@ class VidaaTVRemoteCard extends HTMLElement {
     return stateObj.state || "Unknown";
   }
 
+  _setPending(type, value) {
+    this._pending[type] = { value, time: Date.now() };
+  }
+
+  _normalize(value) {
+    return String(value || "").toLowerCase();
+  }
+
+  _displayValue(type, stateValue) {
+    const pending = this._pending[type];
+    if (!pending?.value) {
+      return stateValue;
+    }
+
+    const normalizedState = this._normalize(stateValue);
+    const normalizedPending = this._normalize(pending.value);
+    if (normalizedState === normalizedPending || Date.now() - pending.time > 10000) {
+      this._pending[type] = { value: "", time: 0 };
+      return stateValue;
+    }
+
+    return pending.value;
+  }
+
+  _isSelectActive() {
+    return (
+      this.shadowRoot?.activeElement?.tagName === "SELECT" ||
+      Date.now() < this._selectInteractingUntil
+    );
+  }
+
+  _renderKey(remote, mediaPlayer, appSensor, sourceSensor, appOptions, sourceOptions) {
+    const remoteState = this._hass.states[remote];
+    const mediaPlayerState = mediaPlayer ? this._hass.states[mediaPlayer] : undefined;
+    const appState = appSensor ? this._hass.states[appSensor] : undefined;
+    const sourceState = sourceSensor ? this._hass.states[sourceSensor] : undefined;
+
+    return JSON.stringify({
+      remote,
+      mediaPlayer,
+      appSensor,
+      sourceSensor,
+      remoteState: remoteState?.state,
+      remoteName: remoteState?.attributes?.friendly_name,
+      mediaPlayerState: mediaPlayerState?.state,
+      mediaPlayerName: mediaPlayerState?.attributes?.friendly_name,
+      mediaPlayerSource: mediaPlayerState?.attributes?.source,
+      mediaPlayerApp: mediaPlayerState?.attributes?.app_name,
+      appState: appState?.state,
+      sourceState: sourceState?.state,
+      appOptions,
+      sourceOptions,
+      pendingApp: this._pending.app.value,
+      pendingSource: this._pending.source.value,
+    });
+  }
+
   _escape(value) {
     return String(value).replace(/[&<>"']/g, (char) => ({
       "&": "&amp;",
@@ -184,6 +258,128 @@ class VidaaTVRemoteCard extends HTMLElement {
       entity_id: remote,
       command: key,
     });
+  }
+
+  _selectSource(source) {
+    const mediaPlayer = this._mediaPlayerEntity();
+    if (!mediaPlayer || !source) {
+      return;
+    }
+
+    this._hass.callService("media_player", "select_source", {
+      entity_id: mediaPlayer,
+      source,
+    });
+  }
+
+  _handleSelectChange(element, value) {
+    const type = element.dataset.select;
+    if (!type || !value) {
+      return;
+    }
+
+    const now = Date.now();
+    const dedupeKey = `${type}:${value}`;
+    if (
+      this._lastSelectCall.key === dedupeKey &&
+      now - this._lastSelectCall.time < 750
+    ) {
+      return;
+    }
+    this._lastSelectCall = { key: dedupeKey, time: now };
+    this._setPending(type, value);
+    this._selectInteractingUntil = 0;
+
+    if (type === "app") {
+      this._setPending("source", "Unknown");
+      this._launchApp(value);
+      this._render(true);
+      return;
+    }
+    this._setPending("app", "Unknown");
+    this._selectSource(value);
+    this._render(true);
+  }
+
+  _launchApp(app) {
+    const mediaPlayer = this._mediaPlayerEntity();
+    if (!mediaPlayer || !app) {
+      return;
+    }
+
+    this._hass.callService("media_player", "play_media", {
+      entity_id: mediaPlayer,
+      media_content_type: "app",
+      media_content_id: app,
+    });
+  }
+
+  _sourceOptions() {
+    const mediaPlayerState = this._mediaPlayerState();
+    const sourceList = mediaPlayerState?.attributes?.source_list;
+    if (!Array.isArray(sourceList)) {
+      return [];
+    }
+
+    const appOptions = this._appOptions();
+    return sourceList.filter(
+      (source) =>
+        typeof source === "string" && source && !appOptions.includes(source),
+    );
+  }
+
+  _appOptions() {
+    const remoteState = this._remoteState();
+    const activityList = remoteState?.attributes?.activity_list;
+    if (Array.isArray(activityList) && activityList.length > 0) {
+      return activityList.filter((app) => typeof app === "string" && app);
+    }
+
+    const mediaPlayerState = this._mediaPlayerState();
+    const appName = mediaPlayerState?.attributes?.app_name;
+    return typeof appName === "string" && appName ? [appName] : [];
+  }
+
+  _selectTemplate(label, value, options, type) {
+    const normalizedValue = this._normalize(value);
+    const currentValue =
+      normalizedValue === "unavailable"
+        ? ""
+        : normalizedValue === "unknown"
+          ? "Unknown"
+          : value;
+    const selectOptions =
+      currentValue && !options.includes(currentValue)
+        ? [currentValue, ...options]
+        : options;
+    const hasOptions = selectOptions.length > 0;
+    return `
+      <div class="select-item">
+        <label>${label}</label>
+        <select
+          data-select="${type}"
+          data-value="${this._escape(currentValue)}"
+          ${hasOptions ? "" : "disabled"}
+        >
+          ${
+            hasOptions
+              ? selectOptions
+                  .map(
+                    (option) => `
+                      <option
+                        value="${this._escape(option)}"
+                        ${option === currentValue ? "selected" : ""}
+                      >
+                        ${this._escape(option)}
+                      </option>
+                    `,
+                  )
+                  .join("")
+              : `<option value="">Unavailable</option>`
+          }
+        </select>
+      </div>
+    `;
   }
 
   _togglePower() {
@@ -219,7 +415,7 @@ class VidaaTVRemoteCard extends HTMLElement {
     `;
   }
 
-  _render() {
+  _render(force = false) {
     if (!this._hass || !this.config) {
       return;
     }
@@ -228,6 +424,26 @@ class VidaaTVRemoteCard extends HTMLElement {
     const mediaPlayer = this._mediaPlayerEntity();
     const appSensor = this._sensorEntity("app");
     const sourceSensor = this._sensorEntity("source");
+    const appStateValue = this._friendlyState(appSensor);
+    const sourceStateValue = this._friendlyState(sourceSensor);
+    const appValue = this._displayValue("app", appStateValue);
+    const sourceValue = this._displayValue("source", sourceStateValue);
+    const appOptions = this._appOptions();
+    const sourceOptions = this._sourceOptions();
+    const renderKey = this._renderKey(
+      remote,
+      mediaPlayer,
+      appSensor,
+      sourceSensor,
+      appOptions,
+      sourceOptions,
+    );
+
+    if (!force && (renderKey === this._lastRenderKey || this._isSelectActive())) {
+      return;
+    }
+    this._lastRenderKey = renderKey;
+
     const title =
       this._hass.states[mediaPlayer]?.attributes?.friendly_name ||
       this._hass.states[remote]?.attributes?.friendly_name ||
@@ -302,27 +518,38 @@ class VidaaTVRemoteCard extends HTMLElement {
           border: 1px solid var(--divider-color);
           opacity: 0.35;
         }
-        .meta {
+        .selects {
           display: grid;
           grid-template-columns: 1fr 1fr;
           gap: 8px;
           margin-top: 12px;
         }
-        .meta-item {
+        .select-item {
           border: 1px solid var(--divider-color);
           border-radius: 8px;
-          padding: 10px 12px;
+          padding: 8px 12px 12px;
           min-width: 0;
         }
-        .meta-label {
+        .select-item label {
+          display: block;
           color: var(--secondary-text-color);
           font-size: 12px;
-          margin-bottom: 4px;
+          margin-bottom: 6px;
         }
-        .meta-value {
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
+        select {
+          width: 100%;
+          min-height: 42px;
+          border: 0;
+          border-bottom: 1px solid var(--secondary-text-color);
+          border-radius: 4px 4px 0 0;
+          padding: 0 32px 0 12px;
+          color: var(--primary-text-color);
+          background: var(--secondary-background-color);
+          font: inherit;
+          outline: none;
+        }
+        select:focus {
+          border-bottom-color: var(--primary-color);
         }
         .missing {
           color: var(--error-color);
@@ -347,15 +574,9 @@ class VidaaTVRemoteCard extends HTMLElement {
             `,
           ).join("")}
         </div>
-        <div class="meta">
-          <div class="meta-item">
-            <div class="meta-label">App</div>
-            <div class="meta-value">${this._escape(this._friendlyState(appSensor))}</div>
-          </div>
-          <div class="meta-item">
-            <div class="meta-label">Source</div>
-            <div class="meta-value">${this._escape(this._friendlyState(sourceSensor))}</div>
-          </div>
+        <div class="selects">
+          ${this._selectTemplate("App", appValue, appOptions, "app")}
+          ${this._selectTemplate("Source", sourceValue, sourceOptions, "source")}
         </div>
         ${
           remoteAvailable
@@ -374,18 +595,41 @@ class VidaaTVRemoteCard extends HTMLElement {
         }
       });
     });
+
+    this.shadowRoot.querySelectorAll("select").forEach((element) => {
+      element.value = element.dataset.value;
+      element.addEventListener("pointerdown", () => {
+        this._selectInteractingUntil = Date.now() + 2000;
+      });
+      element.addEventListener("focus", () => {
+        this._selectInteractingUntil = Date.now() + 2000;
+      });
+      element.addEventListener("change", () => {
+        this._handleSelectChange(element, element.value);
+      });
+      element.addEventListener("blur", () => {
+        this._selectInteractingUntil = 0;
+        this._render(true);
+      });
+    });
   }
 }
 
-customElements.define(CARD_TYPE, VidaaTVRemoteCard);
+if (!customElements.get(CARD_TYPE)) {
+  customElements.define(CARD_TYPE, VidaaTVRemoteCard);
+}
 
 window.customCards = window.customCards || [];
-window.customCards.push({
+const cardMetadata = {
   type: CARD_TYPE,
   name: "Vidaa TV Remote",
-  preview: true,
   description: "Remote control card for Vidaa TV devices.",
+  documentationURL: "https://github.com/tombabolewski/ha-vidaa-tv",
   getEntitySuggestion: (hass, entityId) => {
+    if (!entityId || !hass?.states) {
+      return null;
+    }
+
     const domain = entityId.split(".")[0];
     if (!["remote", "media_player"].includes(domain)) {
       return null;
@@ -432,4 +676,12 @@ window.customCards.push({
 
     return { config };
   },
-});
+};
+const existingCardIndex = window.customCards.findIndex(
+  (card) => card?.type === CARD_TYPE,
+);
+if (existingCardIndex === -1) {
+  window.customCards.push(cardMetadata);
+} else {
+  window.customCards[existingCardIndex] = cardMetadata;
+}

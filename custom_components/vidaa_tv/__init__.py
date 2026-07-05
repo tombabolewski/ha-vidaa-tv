@@ -8,9 +8,14 @@ from pathlib import Path
 
 import voluptuous as vol
 
-from homeassistant.components import frontend
 from homeassistant.components.http import StaticPathConfig
+from homeassistant.components.lovelace.const import (
+    CONF_RESOURCE_TYPE_WS,
+    LOVELACE_DATA,
+    MODE_STORAGE,
+)
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import CONF_ID, CONF_URL
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import device_registry as dr, entity_registry as er
@@ -39,7 +44,8 @@ _LOGGER = logging.getLogger(__name__)
 from vidaa import AsyncVidaaTV
 from vidaa.config import TokenStorage
 
-REMOTE_CARD_URL = "/vidaa_tv/vidaa-tv-remote-card.js"
+REMOTE_CARD_PATH = "/vidaa_tv/vidaa-tv-remote-card.js"
+REMOTE_CARD_RESOURCE_URL = f"{REMOTE_CARD_PATH}?v=9"
 
 
 @dataclass
@@ -61,15 +67,75 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     await hass.http.async_register_static_paths(
         [
             StaticPathConfig(
-                REMOTE_CARD_URL,
+                REMOTE_CARD_PATH,
                 str(Path(__file__).parent / "www" / "vidaa-tv-remote-card.js"),
                 False,
             ),
         ]
     )
-    frontend.add_extra_js_url(hass, REMOTE_CARD_URL)
+    await _async_register_lovelace_resource(hass)
     await _async_setup_services(hass)
     return True
+
+
+async def _async_register_lovelace_resource(hass: HomeAssistant) -> None:
+    """Register the bundled remote card as a Lovelace module resource."""
+    lovelace_data = hass.data.get(LOVELACE_DATA)
+    if lovelace_data is None:
+        _LOGGER.debug("Lovelace is not loaded; skipping Vidaa TV card resource")
+        return
+
+    resource_collection = lovelace_data.resources
+    await resource_collection.async_get_info()
+    resources = resource_collection.async_items() or []
+    matching_resources = [
+        item
+        for item in resources
+        if item.get(CONF_URL, "").startswith(REMOTE_CARD_PATH)
+    ]
+
+    if matching_resources and lovelace_data.resource_mode != MODE_STORAGE:
+        if not any(item.get(CONF_URL) == REMOTE_CARD_RESOURCE_URL for item in matching_resources):
+            _LOGGER.info(
+                "Vidaa TV remote card is available at %s. Update the "
+                "Lovelace resource manually because Lovelace resources are "
+                "in YAML mode.",
+                REMOTE_CARD_RESOURCE_URL,
+            )
+        return
+
+    if lovelace_data.resource_mode != MODE_STORAGE:
+        _LOGGER.info(
+            "Vidaa TV remote card is available at %s. Add it to Lovelace "
+            "resources manually because Lovelace resources are in YAML mode.",
+            REMOTE_CARD_RESOURCE_URL,
+        )
+        return
+
+    if matching_resources:
+        current_resource = matching_resources[0]
+        if current_resource.get(CONF_URL) != REMOTE_CARD_RESOURCE_URL:
+            await resource_collection.async_update_item(
+                current_resource[CONF_ID],
+                {
+                    CONF_RESOURCE_TYPE_WS: "module",
+                    CONF_URL: REMOTE_CARD_RESOURCE_URL,
+                },
+            )
+            _LOGGER.info("Updated Vidaa TV remote card Lovelace resource")
+
+        for duplicate_resource in matching_resources[1:]:
+            await resource_collection.async_delete_item(duplicate_resource[CONF_ID])
+            _LOGGER.info("Removed duplicate Vidaa TV remote card Lovelace resource")
+        return
+
+    await resource_collection.async_create_item(
+        {
+            CONF_RESOURCE_TYPE_WS: "module",
+            CONF_URL: REMOTE_CARD_RESOURCE_URL,
+        }
+    )
+    _LOGGER.info("Registered Vidaa TV remote card Lovelace resource")
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: VidaaTVConfigEntry) -> bool:

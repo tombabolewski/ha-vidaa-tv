@@ -14,6 +14,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from vidaa import APPS, AsyncVidaaTV
+from vidaa.topics import TOPIC_SET_SOURCE, get_topic
 from vidaa.wol import wake_tv
 from .const import DOMAIN, SCAN_INTERVAL, STATE_FAKE_SLEEP, CONF_MAC, CONF_HOST, CONF_DEVICE_ID
 
@@ -235,9 +236,46 @@ class VidaaTVDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self.tv.async_set_volume(volume)
         await self.async_request_refresh()
 
-    async def async_select_source(self, source: str) -> None:
+    def _set_media_context(self, app: str | None, source: str | None, statetype: str) -> None:
+        """Optimistically update media context after an explicit selection."""
+        if not self.data:
+            return
+
+        self.async_set_updated_data(
+            {
+                **self.data,
+                "statetype": statetype,
+                "app": app,
+                "source": source,
+            }
+        )
+
+    async def async_select_source(self, source: str, source_name: str | None = None) -> None:
         """Select input source."""
-        await self.tv.async_set_source(source)
+        _LOGGER.debug("Sending Vidaa source change: %s", source)
+
+        def _publish_source_exact() -> bool:
+            client = getattr(self.tv, "_client", None)
+            if not client or not hasattr(client, "_publish"):
+                return False
+
+            client_id = getattr(client, "client_id", None)
+            if not client_id:
+                return False
+
+            topic = get_topic(TOPIC_SET_SOURCE, client_id)
+            return client._publish(topic, {"sourceid": source})
+
+        result = await self.hass.async_add_executor_job(_publish_source_exact)
+        if not result:
+            _LOGGER.debug(
+                "Exact Vidaa source publish failed for %s, falling back to vidaa-control",
+                source,
+            )
+            result = await self.tv.async_set_source(source)
+
+        _LOGGER.debug("Vidaa source change result for %s: %s", source, result)
+        self._set_media_context(app=None, source=source_name or source, statetype="sourceswitch")
         await self.async_request_refresh()
 
     async def async_send_key(self, key: str) -> None:
@@ -247,6 +285,7 @@ class VidaaTVDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def async_launch_app(self, app_name: str) -> None:
         """Launch app."""
         await self.tv.async_launch_app(app_name)
+        self._set_media_context(app=app_name, source=None, statetype="app")
         await self.async_request_refresh()
 
     async def async_get_apps(self) -> list[dict] | None:

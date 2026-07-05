@@ -65,10 +65,29 @@ type: custom:vidaa-tv-remote-card
 entity: remote.vidaa_tv_remote
 ```
 
-After restarting Home Assistant, open a dashboard, add a card, pick the Vidaa TV
-remote/media player entity, and choose the **Vidaa TV Remote** suggestion. The
-card uses the selected TV's `remote` entity and automatically looks for matching
-`media_player` and current app/source sensors.
+After restarting Home Assistant, the integration registers the card as a
+Lovelace module resource in storage mode. Open a dashboard, edit it, add a card,
+and search for **Vidaa TV Remote** under community/custom cards. This does not
+replace the standard Home Assistant device page; that page will still show the
+usual Device info, Controls, and Activity sections. The card uses the selected
+TV's `remote` entity and automatically looks for matching `media_player` and
+current app/source sensors.
+
+If Lovelace resources are configured in YAML mode, add this resource manually:
+
+```yaml
+url: /vidaa_tv/vidaa-tv-remote-card.js?v=9
+type: module
+```
+
+If the card is not listed, verify that the frontend module is available at
+`/vidaa_tv/vidaa-tv-remote-card.js?v=9`, then hard-refresh the browser. You can
+also add the card manually:
+
+```yaml
+type: custom:vidaa-tv-remote-card
+entity: remote.vidaa_tv_remote
+```
 
 A YAML-only fallback is also included in [`dashboard-remote-card.yaml`](dashboard-remote-card.yaml). It uses standard HA cards only:
 
