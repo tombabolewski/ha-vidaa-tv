@@ -45,6 +45,7 @@ class VidaaTVDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._available = True
         self._device_info_fetched = False
         self._auth_failures = 0
+        self._pending_media_context: dict[str, Any] | None = None
 
     @property
     def available(self) -> bool:
@@ -182,9 +183,17 @@ class VidaaTVDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "app": app,
                 "source": source,
             }
+            data = self._apply_pending_media_context(data)
 
-            _LOGGER.debug("State: on=%s, type=%s, vol=%s, app=%s, src=%s (%.2fs)",
-                         is_on, statetype, volume, app, source, time.monotonic() - start)
+            _LOGGER.debug(
+                "State: on=%s, type=%s, vol=%s, app=%s, src=%s (%.2fs)",
+                is_on,
+                data.get("statetype"),
+                volume,
+                data.get("app"),
+                data.get("source"),
+                time.monotonic() - start,
+            )
             return data
 
         except Exception as err:
@@ -241,6 +250,12 @@ class VidaaTVDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if not self.data:
             return
 
+        self._pending_media_context = {
+            "app": app,
+            "source": source,
+            "statetype": statetype,
+            "expires_at": time.monotonic() + 2.5,
+        }
         self.async_set_updated_data(
             {
                 **self.data,
@@ -250,23 +265,49 @@ class VidaaTVDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             }
         )
 
+    def _apply_pending_media_context(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Keep explicit app/source selections stable during fast TV refreshes."""
+        pending = self._pending_media_context
+        if not pending:
+            return data
+
+        if time.monotonic() > pending["expires_at"]:
+            self._pending_media_context = None
+            return data
+
+        expected_value = pending.get("app") or pending.get("source")
+        current_value = data.get("app") or data.get("source")
+        if (
+            data.get("statetype") == pending["statetype"]
+            and str(current_value or "").casefold() == str(expected_value or "").casefold()
+        ):
+            self._pending_media_context = None
+            return data
+
+        return {
+            **data,
+            "statetype": pending["statetype"],
+            "app": pending["app"],
+            "source": pending["source"],
+        }
+
+    def _publish_source_exact(self, source: str) -> bool:
+        """Publish a source ID exactly until vidaa-control exposes this directly."""
+        client = getattr(self.tv, "_client", None)
+        if not client or not hasattr(client, "_publish"):
+            return False
+
+        client_id = getattr(client, "client_id", None)
+        if not client_id:
+            return False
+
+        topic = get_topic(TOPIC_SET_SOURCE, client_id)
+        return client._publish(topic, {"sourceid": source})
+
     async def async_select_source(self, source: str, source_name: str | None = None) -> None:
         """Select input source."""
         _LOGGER.debug("Sending Vidaa source change: %s", source)
-
-        def _publish_source_exact() -> bool:
-            client = getattr(self.tv, "_client", None)
-            if not client or not hasattr(client, "_publish"):
-                return False
-
-            client_id = getattr(client, "client_id", None)
-            if not client_id:
-                return False
-
-            topic = get_topic(TOPIC_SET_SOURCE, client_id)
-            return client._publish(topic, {"sourceid": source})
-
-        result = await self.hass.async_add_executor_job(_publish_source_exact)
+        result = await self.hass.async_add_executor_job(self._publish_source_exact, source)
         if not result:
             _LOGGER.debug(
                 "Exact Vidaa source publish failed for %s, falling back to vidaa-control",

@@ -76,12 +76,12 @@ current app/source sensors.
 If Lovelace resources are configured in YAML mode, add this resource manually:
 
 ```yaml
-url: /vidaa_tv/vidaa-tv-remote-card.js?v=9
+url: /vidaa_tv/vidaa-tv-remote-card.js?v=1.2.0
 type: module
 ```
 
 If the card is not listed, verify that the frontend module is available at
-`/vidaa_tv/vidaa-tv-remote-card.js?v=9`, then hard-refresh the browser. You can
+`/vidaa_tv/vidaa-tv-remote-card.js?v=1.2.0`, then hard-refresh the browser. You can
 also add the card manually:
 
 ```yaml

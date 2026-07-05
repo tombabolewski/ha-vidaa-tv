@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,7 +16,13 @@ from homeassistant.components.lovelace.const import (
     MODE_STORAGE,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_ID, CONF_URL
+from homeassistant.const import (
+    ATTR_AREA_ID,
+    ATTR_DEVICE_ID,
+    ATTR_ENTITY_ID,
+    CONF_ID,
+    CONF_URL,
+)
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import device_registry as dr, entity_registry as er
@@ -45,7 +52,11 @@ from vidaa import AsyncVidaaTV
 from vidaa.config import TokenStorage
 
 REMOTE_CARD_PATH = "/vidaa_tv/vidaa-tv-remote-card.js"
-REMOTE_CARD_RESOURCE_URL = f"{REMOTE_CARD_PATH}?v=9"
+_MANIFEST_VERSION = json.loads((Path(__file__).parent / "manifest.json").read_text()).get(
+    "version",
+    "dev",
+)
+REMOTE_CARD_RESOURCE_URL = f"{REMOTE_CARD_PATH}?v={_MANIFEST_VERSION}"
 
 
 @dataclass
@@ -267,9 +278,15 @@ async def _async_setup_services(hass: HomeAssistant) -> None:
             DOMAIN,
             SERVICE_SEND_KEY,
             async_send_key,
-            schema=vol.Schema({
-                vol.Required(ATTR_KEY): cv.string,
-            }),
+            schema=vol.Schema(
+                {
+                    vol.Optional(ATTR_ENTITY_ID): cv.entity_ids,
+                    vol.Optional(ATTR_DEVICE_ID): cv.ensure_list,
+                    vol.Optional(ATTR_AREA_ID): cv.ensure_list,
+                    vol.Required(ATTR_KEY): cv.string,
+                },
+                extra=vol.ALLOW_EXTRA,
+            ),
         )
 
     if not hass.services.has_service(DOMAIN, SERVICE_LAUNCH_APP):
@@ -277,9 +294,15 @@ async def _async_setup_services(hass: HomeAssistant) -> None:
             DOMAIN,
             SERVICE_LAUNCH_APP,
             async_launch_app,
-            schema=vol.Schema({
-                vol.Required(ATTR_APP): cv.string,
-            }),
+            schema=vol.Schema(
+                {
+                    vol.Optional(ATTR_ENTITY_ID): cv.entity_ids,
+                    vol.Optional(ATTR_DEVICE_ID): cv.ensure_list,
+                    vol.Optional(ATTR_AREA_ID): cv.ensure_list,
+                    vol.Required(ATTR_APP): cv.string,
+                },
+                extra=vol.ALLOW_EXTRA,
+            ),
         )
 
 

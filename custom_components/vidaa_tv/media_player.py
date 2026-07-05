@@ -241,11 +241,11 @@ class VidaaTVMediaPlayer(VidaaTVEntity, MediaPlayerEntity):
 
     async def async_media_next_track(self) -> None:
         """Send next track command."""
-        await self.coordinator.async_send_key("KEY_FAST_FORWARD")
+        await self.coordinator.async_send_key("KEY_FORWARDS")
 
     async def async_media_previous_track(self) -> None:
         """Send previous track command."""
-        await self.coordinator.async_send_key("KEY_REWIND")
+        await self.coordinator.async_send_key("KEY_BACK")
 
     async def async_play_media(
         self, media_type: str, media_id: str, **kwargs: Any
