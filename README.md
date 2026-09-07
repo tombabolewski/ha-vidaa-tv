@@ -1,3 +1,31 @@
+> ## Fork note — input source switching fixed
+>
+> This is a fork of [tombabolewski/ha-vidaa-tv](https://github.com/tombabolewski/ha-vidaa-tv)
+> with a single fix: **selecting an HDMI input actually works.**
+>
+> Upstream (and the `vidaa-control` library it uses) translates source names
+> through a hardcoded table into numeric ids — `hdmi1` becomes `"3"`, `hdmi2`
+> becomes `"4"`, and so on. Real VIDAA sets report *string* ids in their own
+> `sourcelist` (`"HDMI1"`, `"HDMI2"`, `"TV"`, `"AVS"`) and silently discard a
+> command carrying a number.
+>
+> Verified against a Hisense set over its MQTT interface:
+>
+> | payload sent to `changesource` | result |
+> |---|---|
+> | `{"sourceid": "5"}` | nothing happens |
+> | `{"sourceid": "HDMI3"}` | input switches to HDMI3 |
+>
+> The fix stores the `sourceid` the TV reports alongside each source name and
+> passes that through unchanged. It is two small edits, in
+> `__init__.py` and `media_player.py`.
+>
+> This addresses upstream issue
+> [#2 "Switch Input source"](https://github.com/tombabolewski/ha-vidaa-tv/issues/2).
+>
+> Everything else is unchanged and all credit for the integration belongs to
+> the original author.
+
 # Vidaa TV - Home Assistant Integration
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
