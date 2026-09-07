@@ -68,6 +68,8 @@ class VidaaTVMediaPlayer(VidaaTVEntity, MediaPlayerEntity):
         self._sources: list[str] = []
         self._apps: list[dict] = []
         self._source_list: list[str] = []
+        # Display name -> sourceid, exactly as reported by the TV
+        self._source_ids: dict[str, str] = {}
 
     @property
     def available(self) -> bool:
@@ -136,10 +138,14 @@ class VidaaTVMediaPlayer(VidaaTVEntity, MediaPlayerEntity):
             if sources and isinstance(sources, list):
                 self._sources = sources
                 self._source_list = []
+                self._source_ids = {}
                 for s in sources:
                     if isinstance(s, dict):
                         name = s.get("sourcename", s.get("name", f"Source {s.get('sourceid', '?')}"))
                         self._source_list.append(name)
+                        source_id = s.get("sourceid")
+                        if source_id is not None:
+                            self._source_ids[name] = str(source_id)
 
             apps = await self.coordinator.async_get_apps()
             if apps and isinstance(apps, list):
@@ -179,13 +185,30 @@ class VidaaTVMediaPlayer(VidaaTVEntity, MediaPlayerEntity):
         await self.coordinator.async_set_volume(int(volume * 100))
 
     async def async_select_source(self, source: str) -> None:
-        """Select input source."""
+        """Select input source.
+
+        Apps are launched by name. Inputs are switched using the sourceid the
+        TV reported in its own sourcelist - not a hardcoded numeric mapping.
+        Real devices expect {"sourceid": "HDMI3"}; a numeric id is ignored.
+        """
         for app in self._apps:
             if app.get("name") == source:
                 await self.coordinator.async_launch_app(source)
                 return
 
-        await self.coordinator.async_select_source(source)
+        source_id = self._source_ids.get(source)
+        if source_id is None:
+            # Source list may not be loaded yet - refresh once
+            await self._async_update_sources()
+            source_id = self._source_ids.get(source)
+
+        if source_id is None:
+            _LOGGER.warning(
+                "Unknown source %r - known inputs: %s", source,
+                ", ".join(sorted(self._source_ids)) or "none")
+            return
+
+        await self.coordinator.async_select_source(source_id)
 
     async def async_media_play(self) -> None:
         """Send play command."""

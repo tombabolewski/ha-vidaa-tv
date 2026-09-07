@@ -28,6 +28,20 @@ from .const import (
 )
 from .coordinator import VidaaTVDataUpdateCoordinator
 
+# --- Fix: input source switching ---------------------------------------------
+# vidaa-control maps source names through a hardcoded table to numbers
+# (hdmi1 -> "3", hdmi2 -> "4", ...). Real VIDAA devices report *string* ids in
+# their sourcelist ("HDMI1", "HDMI2", "TV", "AVS") and silently ignore a
+# command carrying a numeric id.
+# Measured on a Hisense set: {"sourceid": "5"} does nothing, while
+# {"sourceid": "HDMI3"} switches the input.
+# Clearing the table makes set_source pass the id through untouched, so we can
+# hand it the id the TV itself reported (see media_player.async_select_source).
+from vidaa import topics as _vidaa_topics
+
+_vidaa_topics.SOURCE_MAP.clear()
+# -----------------------------------------------------------------------------
+
 from vidaa.keys import ALL_KEYS
 
 _LOGGER = logging.getLogger(__name__)
