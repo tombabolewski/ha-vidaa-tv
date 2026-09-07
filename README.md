@@ -21,7 +21,10 @@
 > `__init__.py` and `media_player.py`.
 >
 > This addresses upstream issue
-> [#2 "Switch Input source"](https://github.com/tombabolewski/ha-vidaa-tv/issues/2).
+> [#2 "Switch Input source"](https://github.com/tombabolewski/ha-vidaa-tv/issues/2)
+> and has been submitted upstream as
+> [PR #15](https://github.com/tombabolewski/ha-vidaa-tv/pull/15). Once it is
+> merged there, this fork can be dropped in favour of the original.
 >
 > Everything else is unchanged and all credit for the integration belongs to
 > the original author.
