@@ -10,7 +10,7 @@ import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError, ServiceValidationError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
@@ -78,20 +78,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: VidaaTVConfigEntry) -> b
         storage=storage,
     )
 
-    # Try to connect
-    try:
-        connected = await tv.async_connect(timeout=10)
-        if not connected:
-            raise ConfigEntryNotReady("Failed to connect to TV")
-    except ConfigEntryNotReady:
-        raise
-    except Exception as err:
-        _LOGGER.debug("Error connecting to TV: %s", err)
-        raise ConfigEntryNotReady("Error connecting to TV") from err
-
     # Create coordinator for data updates
     coordinator = VidaaTVDataUpdateCoordinator(hass, tv, entry)
-    await coordinator.async_config_entry_first_refresh()
+
+    # A powered-off TV may take its network interface and MQTT broker offline.
+    # Do not fail config entry setup in that case: the media player must still
+    # be created so it can send Wake-on-LAN. The coordinator will keep retrying
+    # and populate live data after the TV becomes reachable.
+    await coordinator.async_refresh()
 
     # Store runtime data
     entry.runtime_data = VidaaTVRuntimeData(coordinator=coordinator, tv=tv)
