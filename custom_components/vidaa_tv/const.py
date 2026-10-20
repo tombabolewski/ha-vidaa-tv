@@ -26,6 +26,15 @@ TIMEOUT_DISCOVERY: Final = 5
 # Scan interval for polling
 SCAN_INTERVAL: Final = 30
 
+# Token cache (shared by all TVs, kept by vidaa-control)
+TOKEN_FILE: Final = ".vidaa_tv_tokens.json"
+# Refresh the access token when it expires sooner than this (seconds)
+TOKEN_REFRESH_BEFORE: Final = 24 * 60 * 60
+# How often to check the access token expiry (seconds)
+TOKEN_CHECK_INTERVAL: Final = 60 * 60
+# Consecutive rejected connections (TV reachable) before asking to pair again
+AUTH_FAILURES_BEFORE_REAUTH: Final = 3
+
 # Services
 SERVICE_SEND_KEY: Final = "send_key"
 SERVICE_LAUNCH_APP: Final = "launch_app"

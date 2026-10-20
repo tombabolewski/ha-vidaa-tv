@@ -4,13 +4,18 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from pathlib import Path
+from functools import partial
 
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError, ServiceValidationError
+from homeassistant.exceptions import (
+    ConfigEntryAuthFailed,
+    ConfigEntryNotReady,
+    HomeAssistantError,
+    ServiceValidationError,
+)
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
@@ -26,14 +31,17 @@ from .const import (
     ATTR_KEY,
     ATTR_APP,
 )
-from .coordinator import VidaaTVDataUpdateCoordinator
+from .coordinator import (
+    VidaaTVDataUpdateCoordinator,
+    async_is_reachable,
+    clear_saved_token,
+    create_tv_client,
+    get_token_storage,
+)
 
 from vidaa.keys import ALL_KEYS
 
 _LOGGER = logging.getLogger(__name__)
-
-from vidaa import AsyncVidaaTV
-from vidaa.config import TokenStorage
 
 
 @dataclass
@@ -41,7 +49,6 @@ class VidaaTVRuntimeData:
     """Runtime data for Vidaa TV integration."""
 
     coordinator: VidaaTVDataUpdateCoordinator
-    tv: AsyncVidaaTV
 
 
 # Python 3.11 compatible type alias (not 3.12+ type statement)
@@ -64,26 +71,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: VidaaTVConfigEntry) -> b
 
     _LOGGER.debug("Setting up Vidaa TV at %s:%s", host, port)
 
-    # Set up token storage in HA config directory
-    config_dir = Path(hass.config.config_dir)
-    storage = TokenStorage(config_dir / ".vidaa_tv_tokens.json")
-
-    # Create the async TV client (certs are bundled in vidaa-control library)
-    tv = AsyncVidaaTV(
-        host=host,
-        port=port,
-        mac_address=mac,
-        use_dynamic_auth=True,
-        enable_persistence=True,
-        storage=storage,
-    )
+    tv = create_tv_client(hass, host, port, mac)
 
     # Try to connect
     try:
         connected = await tv.async_connect(timeout=10)
         if not connected:
+            await _async_raise_if_auth_failed(hass, host, port, mac)
             raise ConfigEntryNotReady("Failed to connect to TV")
-    except ConfigEntryNotReady:
+    except (ConfigEntryAuthFailed, ConfigEntryNotReady):
         raise
     except Exception as err:
         _LOGGER.debug("Error connecting to TV: %s", err)
@@ -94,7 +90,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: VidaaTVConfigEntry) -> b
     await coordinator.async_config_entry_first_refresh()
 
     # Store runtime data
-    entry.runtime_data = VidaaTVRuntimeData(coordinator=coordinator, tv=tv)
+    entry.runtime_data = VidaaTVRuntimeData(coordinator=coordinator)
 
     # Set up platforms
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -103,6 +99,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: VidaaTVConfigEntry) -> b
     entry.async_on_unload(entry.add_update_listener(async_update_options))
 
     return True
+
+
+async def _async_raise_if_auth_failed(
+    hass: HomeAssistant, host: str, port: int, mac: str | None
+) -> None:
+    """Ask to pair again when the TV is up but the saved token is not usable.
+
+    Without this, an expired token makes setup retry forever and the only way
+    out is removing and re-adding the TV.
+    """
+    if not await async_is_reachable(host, port):
+        return
+    status = await hass.async_add_executor_job(
+        partial(get_token_storage(hass).get_token_status, device_id=mac, host=host, port=port)
+    )
+    if not status["access_valid"]:
+        raise ConfigEntryAuthFailed(
+            "The TV rejected the saved credentials. Please re-pair with the TV."
+        )
 
 
 async def _async_setup_services(hass: HomeAssistant) -> None:
@@ -175,11 +190,20 @@ async def async_unload_entry(hass: HomeAssistant, entry: VidaaTVConfigEntry) -> 
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
     if unload_ok:
-        runtime_data = entry.runtime_data
-        if runtime_data.tv:
-            await runtime_data.tv.async_disconnect()
+        await entry.runtime_data.coordinator.tv.async_disconnect()
 
     return unload_ok
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: VidaaTVConfigEntry) -> None:
+    """Remove the cached tokens so adding the TV again shows a new PIN."""
+    await hass.async_add_executor_job(
+        clear_saved_token,
+        get_token_storage(hass),
+        entry.data[CONF_HOST],
+        entry.data.get(CONF_PORT, DEFAULT_PORT),
+        entry.data.get(CONF_MAC),
+    )
 
 
 async def async_update_options(hass: HomeAssistant, entry: VidaaTVConfigEntry) -> None:

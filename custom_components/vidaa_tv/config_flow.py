@@ -6,7 +6,7 @@ import asyncio
 import logging
 import re
 from collections.abc import Mapping
-from pathlib import Path
+from functools import partial
 from typing import Any
 
 import voluptuous as vol
@@ -36,10 +36,11 @@ from .const import (
     SCAN_INTERVAL,
 )
 
+from .coordinator import clear_saved_token, create_tv_client, get_token_storage
+
 _LOGGER = logging.getLogger(__name__)
 
 from vidaa import AsyncVidaaTV
-from vidaa.config import TokenStorage
 from vidaa.wol import get_mac_from_ip
 
 
@@ -108,24 +109,24 @@ class VidaaTVConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             _LOGGER.debug("Could not resolve MAC from ARP: %s", err)
         return None
 
-    def _get_storage(self) -> TokenStorage:
-        """Get token storage in HA config directory."""
-        config_dir = Path(self.hass.config.config_dir)
-        return TokenStorage(config_dir / ".vidaa_tv_tokens.json")
-
-    async def _async_create_client(self) -> AsyncVidaaTV:
+    async def _async_create_client(self, clear_token: bool = False) -> AsyncVidaaTV:
         """Create an AsyncVidaaTV client with current settings.
 
-        Certs are bundled in the vidaa-control library, no need to specify paths.
+        Expired cached tokens are always dropped first: the client would
+        otherwise consider itself paired, skip the PIN and fail to connect.
+        With ``clear_token`` the cached token is dropped even if still valid.
         """
-        return AsyncVidaaTV(
-            host=self._host,
-            port=self._port,
-            use_dynamic_auth=True,
-            mac_address=self._mac,
-            enable_persistence=True,
-            storage=self._get_storage(),
+        await self.hass.async_add_executor_job(
+            partial(
+                clear_saved_token,
+                get_token_storage(self.hass),
+                self._host,
+                self._port,
+                self._mac,
+                only_expired=not clear_token,
+            )
         )
+        return create_tv_client(self.hass, self._host, self._port, self._mac)
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -414,7 +415,8 @@ class VidaaTVConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Confirm reauth and trigger pairing."""
         if user_input is not None:
             await self._async_cleanup_client()
-            self._tv = await self._async_create_client()
+            # The saved token was rejected, pair from scratch
+            self._tv = await self._async_create_client(clear_token=True)
 
             try:
                 connected = await self._tv.async_connect(timeout=TIMEOUT_CONNECT)

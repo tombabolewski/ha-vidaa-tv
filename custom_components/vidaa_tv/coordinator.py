@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
+from contextlib import suppress
 from datetime import timedelta
+from functools import partial
+from pathlib import Path
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -14,10 +18,76 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from vidaa import APPS, AsyncVidaaTV
+from vidaa.config import TokenStorage
 from vidaa.wol import wake_tv
-from .const import DOMAIN, SCAN_INTERVAL, STATE_FAKE_SLEEP, CONF_MAC, CONF_HOST, CONF_DEVICE_ID
+from .const import (
+    DOMAIN,
+    SCAN_INTERVAL,
+    STATE_FAKE_SLEEP,
+    CONF_MAC,
+    CONF_HOST,
+    CONF_PORT,
+    CONF_DEVICE_ID,
+    DEFAULT_PORT,
+    TOKEN_FILE,
+    TOKEN_REFRESH_BEFORE,
+    TOKEN_CHECK_INTERVAL,
+    AUTH_FAILURES_BEFORE_REAUTH,
+)
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def get_token_storage(hass: HomeAssistant) -> TokenStorage:
+    """Get token storage in HA config directory."""
+    return TokenStorage(Path(hass.config.config_dir) / TOKEN_FILE)
+
+
+def create_tv_client(
+    hass: HomeAssistant, host: str, port: int, mac: str | None
+) -> AsyncVidaaTV:
+    """Create an AsyncVidaaTV client (certs are bundled in vidaa-control)."""
+    return AsyncVidaaTV(
+        host=host,
+        port=port,
+        mac_address=mac,
+        use_dynamic_auth=True,
+        enable_persistence=True,
+        storage=get_token_storage(hass),
+    )
+
+
+def clear_saved_token(
+    storage: TokenStorage,
+    host: str,
+    port: int,
+    mac: str | None,
+    only_expired: bool = False,
+) -> None:
+    """Remove the cached tokens of a TV so the next connection pairs again.
+
+    A TV paired by hostname may be cached under its host and later under its
+    MAC, so keep deleting until no token is found. Blocking (file I/O).
+    """
+    for _ in range(3):
+        status = storage.get_token_status(device_id=mac, host=host, port=port)
+        if not status["has_token"] or (only_expired and status["access_valid"]):
+            return
+        storage.delete_token(device_id=mac, host=host, port=port)
+
+
+async def async_is_reachable(host: str, port: int, timeout: float = 3) -> bool:
+    """Check whether the TV accepts TCP connections on its MQTT port."""
+    try:
+        _, writer = await asyncio.wait_for(
+            asyncio.open_connection(host, port), timeout=timeout
+        )
+    except (OSError, asyncio.TimeoutError):
+        return False
+    writer.close()
+    with suppress(Exception):
+        await writer.wait_closed()
+    return True
 
 
 class VidaaTVDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -41,14 +111,78 @@ class VidaaTVDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         self.tv = tv
         self.entry = entry
+        self._host: str = entry.data[CONF_HOST]
+        self._port: int = entry.data.get(CONF_PORT, DEFAULT_PORT)
+        self._storage = get_token_storage(hass)
         self._available = True
         self._device_info_fetched = False
         self._auth_failures = 0
+        self._last_token_check: float | None = None
 
     @property
     def available(self) -> bool:
         """Return if TV is available."""
         return self._available
+
+    async def _async_reconnect(self) -> None:
+        """Reconnect to the TV with a new client.
+
+        vidaa-control only reads the token cache when a client is created, so
+        reusing the old client keeps sending an expired access token as the
+        MQTT password. A new client picks up refreshed tokens and connects with
+        the refresh token when the access token expired.
+        """
+        with suppress(Exception):
+            await self.tv.async_disconnect()
+
+        self.tv = create_tv_client(
+            self.hass, self._host, self._port, self.entry.data.get(CONF_MAC)
+        )
+        if await self.tv.async_connect(timeout=5):
+            self._auth_failures = 0
+            return
+
+        self._available = False
+        if await async_is_reachable(self._host, self._port):
+            # TV is up but refused the session: the saved credentials are bad
+            self._auth_failures += 1
+            if self._auth_failures >= AUTH_FAILURES_BEFORE_REAUTH:
+                raise ConfigEntryAuthFailed(
+                    "The TV rejected the saved credentials. Please re-pair with the TV."
+                )
+        raise UpdateFailed("Failed to connect to TV")
+
+    async def _async_ensure_token_fresh(self) -> None:
+        """Refresh the access token before it expires.
+
+        The TV can only refresh tokens while it is reachable, so refresh while
+        connected instead of waiting for the access token to expire.
+        """
+        now = time.monotonic()
+        if self._last_token_check is not None and now - self._last_token_check < TOKEN_CHECK_INTERVAL:
+            return
+        self._last_token_check = now
+
+        status = await self.hass.async_add_executor_job(
+            partial(
+                self._storage.get_token_status,
+                device_id=self.entry.data.get(CONF_MAC),
+                host=self._host,
+                port=self._port,
+            )
+        )
+        if not status["has_token"] or not status["refresh_valid"]:
+            return
+        if status["access_valid"] and status["access_expires_in"] > TOKEN_REFRESH_BEFORE:
+            return
+
+        _LOGGER.debug("Access token expires in %ss, refreshing", status["access_expires_in"])
+        if not await self.tv.async_refresh_token(timeout=10):
+            _LOGGER.warning("Could not refresh the TV access token")
+            return
+
+        # Start a new session so the refreshed tokens are used from now on
+        await self._async_reconnect()
 
     async def _async_update_device_info(self) -> None:
         """Fetch and update device info in the device registry."""
@@ -123,16 +257,11 @@ class VidaaTVDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         try:
             if not self.tv.is_connected:
                 _LOGGER.debug("TV disconnected, attempting reconnect")
-                try:
-                    await self.tv.async_disconnect()
-                except Exception:
-                    pass
-                connected = await self.tv.async_connect(timeout=5)
-                if not connected:
-                    self._available = False
-                    raise UpdateFailed("Failed to connect to TV")
+                await self._async_reconnect()
 
             self._available = True
+
+            await self._async_ensure_token_fresh()
 
             # Update device info on first successful connection
             await self._async_update_device_info()
@@ -186,6 +315,8 @@ class VidaaTVDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                          is_on, statetype, volume, app, source, time.monotonic() - start)
             return data
 
+        except (ConfigEntryAuthFailed, UpdateFailed):
+            raise
         except Exception as err:
             self._available = False
             error_str = str(err).lower()

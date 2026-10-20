@@ -25,7 +25,7 @@ async def async_get_config_entry_diagnostics(
     """Return diagnostics for a config entry."""
     runtime_data = entry.runtime_data
     coordinator = runtime_data.coordinator
-    tv = runtime_data.tv
+    tv = coordinator.tv
 
     device_info = None
     if tv and tv.is_connected:
