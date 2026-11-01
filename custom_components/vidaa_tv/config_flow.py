@@ -9,12 +9,14 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+import aiohttp
 import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.components import ssdp
 from homeassistant.core import callback
 from homeassistant.config_entries import ConfigFlowResult
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
     NumberSelector,
     NumberSelectorConfig,
@@ -106,6 +108,27 @@ class VidaaTVConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return mac.upper().replace("-", ":")
         except Exception as err:
             _LOGGER.debug("Could not resolve MAC from ARP: %s", err)
+        # ARP only works on the same subnet. A TV in another VLAN still
+        # publishes its MAC in the DLNA renderer description (port 38400).
+        return await self._async_mac_from_dlna()
+
+    async def _async_mac_from_dlna(self) -> str | None:
+        """Read the TV's MAC from its DLNA renderer description."""
+        url = f"http://{self._host}:38400/MediaServer/rendererdevicedesc.xml"
+        try:
+            session = async_get_clientsession(self.hass)
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                if resp.status != 200:
+                    return None
+                text = await resp.text()
+        except (aiohttp.ClientError, TimeoutError) as err:
+            _LOGGER.debug("Could not read DLNA description: %s", err)
+            return None
+        for field in ("macWifi", "macEthernet", "mac"):
+            match = re.search(rf"\b{field}=([0-9a-fA-F]{{12}})\b", text)
+            if match:
+                raw = match.group(1).upper()
+                return ":".join(raw[i : i + 2] for i in range(0, 12, 2))
         return None
 
     def _get_storage(self) -> TokenStorage:
